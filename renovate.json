@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "timezone": "America/New_York",
+  "schedule": ["after 5pm on Friday"],
+  "labels": ["dependencies"],
+  "dependencyDashboard": true,
+  "packageRules": [
+    {
+      "description": "Group all GitHub Actions updates into a single PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions"
+    },
+    {
+      "description": "Group Rust/Cargo dependency updates",
+      "matchManagers": ["cargo"],
+      "groupName": "rust-deps"
+    },
+    {
+      "description": "Group PyO3 and maturin updates together (tightly coupled)",
+      "matchManagers": ["cargo", "pip_requirements", "pyproject"],
+      "matchPackageNames": ["pyo3", "pyo3-async-runtimes", "maturin"],
+      "groupName": "pyo3-maturin"
+    }
+  ]
+}
