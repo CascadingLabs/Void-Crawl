@@ -7,7 +7,7 @@
   "dependencyDashboard": true,
   "packageRules": [
     {
-      "description": "Group all GitHub Actions updates into a single PR",
+      "description": "Group GitHub Actions updates",
       "matchManagers": ["github-actions"],
       "groupName": "github-actions"
     },
@@ -17,7 +17,19 @@
       "groupName": "rust-deps"
     },
     {
-      "description": "Group PyO3 and maturin updates together (tightly coupled)",
+      "description": "Group Python production dependency updates",
+      "matchManagers": ["uv"],
+      "matchDepTypes": ["dependencies"],
+      "groupName": "uv-production-deps"
+    },
+    {
+      "description": "Group Python dev dependency updates",
+      "matchManagers": ["uv"],
+      "matchDepTypes": ["dev"],
+      "groupName": "uv-dev-deps"
+    },
+    {
+      "description": "Group PyO3 and maturin updates (tightly coupled)",
       "matchManagers": ["cargo", "pip_requirements", "pyproject"],
       "matchPackageNames": ["pyo3", "pyo3-async-runtimes", "maturin"],
       "groupName": "pyo3-maturin"
