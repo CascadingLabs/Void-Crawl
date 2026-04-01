@@ -453,7 +453,7 @@ impl BrowserPool {
         future::join_all(tab_futs).await;
 
         // Close all browser sessions in parallel
-        let session_futs: Vec<_> = self.sessions.iter().map(|s| s.close()).collect();
+        let session_futs: Vec<_> = self.sessions.iter().map(BrowserSession::close).collect();
         future::join_all(session_futs).await;
 
         Ok(())
