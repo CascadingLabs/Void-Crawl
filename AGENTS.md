@@ -24,7 +24,7 @@ void_crawl/
 - `cargo check` — type-check the Rust code
 - `cargo test -p void_crawl_core -- --test-threads=1` — run Rust integration tests (serial, requires Chromium)
 - `./build.sh` — build and install the Python extension into the current venv
-- `python -m pytest tests/ -v` — Python integration tests
+- `uv run pytest tests/ -v` — Python integration tests
 
 ## Python type stubs
 - Type stubs at `void_crawl.pyi`
