@@ -74,9 +74,9 @@ cargo fmt --check
 ```
 
 - Follow standard Rust conventions (`rustfmt` defaults)
-- Clippy config lives in `clippy.toml` — enforces cognitive complexity thresholds, MSRV 1.86
-- `print!`/`println!` are disallowed — use `tracing` instead
-- Use `thiserror` for error types — every new error variant goes in `error.rs`
+- Clippy config lives in `clippy.toml` -enforces cognitive complexity thresholds, MSRV 1.86
+- `print!`/`println!` are disallowed -use `tracing` instead
+- Use `thiserror` for error types -every new error variant goes in `error.rs`
 - Map chromiumoxide errors to `YosoiError` at the boundary, not deep inside methods
 - Builders use the owned-self pattern: `.method(self) -> Self`
 
@@ -91,21 +91,33 @@ uv run mypy .
 - Follow the project's `ruff` config (see root `pyproject.toml`)
 - Single quotes, 120-char line length
 - Google-style docstrings
-- Never use `unittest` — always `pytest`
-- Use `tenacity` for retries — never `time.sleep()` in loops
+- Never use `unittest` -always `pytest`
+- Use `tenacity` for retries -never `time.sleep()` in loops
 
 CI runs clippy, cargo test, and ruff on every push and PR. Your PR must pass all checks.
 
+## Issues
+
+We use [GitHub issue forms](https://github.com/CascadingLabs/VoidCrawl/issues/new/choose) for all issues. Pick the template that fits:
+
+- **Bug Report** -something is broken or behaving unexpectedly.
+- **Feature Request** -suggest a new feature or improvement.
+- **Question** -ask a question about usage or internals.
+- **Ticket** -internal planning ticket for tracked work.
+
+Blank issues are disabled -please use a template so we have the context we need to help.
+
 ## Pull Request Rules
 
-1. **Branch from `main`** — create a feature branch (`feat/...`, `fix/...`, `docs/...`).
-2. **Keep PRs focused** — one logical change per PR.
-3. **Pass CI** — Rust compilation, clippy, tests, and Python lint must all pass.
-4. **Describe your changes** — every PR should include:
-   - **Intent** — what the PR does and why.
-   - **Changes** — a summary of what was changed.
-   - **GenAI usage** — if you used AI to write any of the code, include the prompts you used.
-   - **Risks** — any risks or side effects this PR might introduce.
+1. **Branch from `main`** -create a feature branch (`feat/...`, `fix/...`, `docs/...`).
+2. **Keep PRs focused** -one logical change per PR.
+3. **Pass CI** -Rust compilation, clippy, tests, and Python lint must all pass.
+4. **Use the PR template** -every PR auto-fills a template. Fill in all sections:
+   - **Intent** -what the PR does and why.
+   - **Changes** -a summary of what was changed.
+   - **GenAI usage** -check the box and describe how AI was used, if applicable. All AI-generated code must be reviewed line-by-line.
+   - **Risks** -any risks or side effects this PR might introduce.
+5. **Link an issue** -reference the issue your PR addresses with `Closes #<number>`.
 
 ### Commit Conventions
 
@@ -122,10 +134,10 @@ test(driver): add stealth config integration test
 ```
 void_crawl/
 ├── crates/
-│   ├── core/              # void_crawl_core — pure Rust CDP wrapper
+│   ├── core/              # void_crawl_core -pure Rust CDP wrapper
 │   │   ├── src/           # Library source
 │   │   └── tests/         # Integration tests (require Chrome)
-│   └── pyo3_bindings/     # void_crawl — PyO3 extension module
+│   └── pyo3_bindings/     # void_crawl -PyO3 extension module
 │       └── src/lib.rs     # Python class definitions
 ├── Cargo.toml             # Workspace root
 ├── pyproject.toml         # maturin build config
@@ -150,9 +162,9 @@ void_crawl/
 ## PyO3 Binding Conventions
 
 - Every Python-facing async method uses `pyo3_async_runtimes::tokio::future_into_py`
-- The inner Rust object is wrapped in `Arc<Mutex<Option<T>>>` — `Option` for clean shutdown semantics
+- The inner Rust object is wrapped in `Arc<Mutex<Option<T>>>` -`Option` for clean shutdown semantics
 - Error conversion: `YosoiError` -> `PyRuntimeError` via `to_py_err()`
-- Keep the binding layer thin — business logic belongs in `crates/core/`
+- Keep the binding layer thin -business logic belongs in `crates/core/`
 
 ## License
 
