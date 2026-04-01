@@ -1,0 +1,16 @@
+<svg width="100%" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="logo-title logo-desc">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&amp;display=swap');
+    </style>
+  </defs>
+  <title id="logo-title">VoidCrawl Logo</title>
+  <desc id="logo-desc">VoidCrawl logo — periodic table tile with symbol Vc on a light purple background</desc>
+  <rect x="0" y="0" width="500" height="500" fill="#f0eaf8"/>
+  <rect x="22" y="22" width="456" height="456" rx="28" fill="none" stroke="#6b3fa0" stroke-width="3.5"/>
+  <rect x="34" y="34" width="432" height="432" rx="20" fill="none" stroke="#6b3fa0" stroke-width="1" opacity="0.35"/>
+  <text x="58" y="82" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="700" fill="#3d1a6e" opacity="0.8">401</text>
+  <text x="442" y="82" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="700" fill="#3d1a6e" opacity="0.8" text-anchor="end">330.26</text>
+  <text x="250" y="310" font-family="Inter, system-ui, sans-serif" font-size="200" font-weight="800" fill="#4a2080" opacity="0.95" text-anchor="middle">Vc</text>
+  <text x="250" y="382" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="400" fill="#3d1a6e" opacity="0.75" text-anchor="middle" letter-spacing="3">VoidCrawl</text>
+</svg>

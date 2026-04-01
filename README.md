@@ -1,10 +1,30 @@
-# void_crawl
+<p align="center">
+  <a href="https://cascadinglabs.com/voidcrawl/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="media/logo-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="media/logo-light.svg">
+      <img src="media/logo-dark.svg" alt="VoidCrawl" width="200">
+    </picture>
+  </a>
+</p>
 
-[![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE.md)
+<p align="center">
+  <a href="https://discord.gg/ftykDhmAQN"><img src="https://img.shields.io/badge/Discord-Join-7c4dbd?labelColor=120a24&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-7c4dbd?labelColor=120a24" alt="License"></a>
+  <a href="https://github.com/CascadingLabs/VoidCrawl/actions"><img src="https://img.shields.io/github/actions/workflow/status/CascadingLabs/VoidCrawl/CI.yaml?label=CI&labelColor=120a24&color=7c4dbd" alt="CI"></a>
+  <a href="https://pypi.python.org/pypi/void-crawl"><img src="https://img.shields.io/pypi/v/void-crawl?labelColor=120a24&color=7c4dbd" alt="PyPI"></a>
+  <a href="https://pypi.python.org/pypi/void-crawl"><img src="https://img.shields.io/pypi/pyversions/void-crawl?labelColor=120a24&color=7c4dbd" alt="Python versions"></a>
+  <a href="https://cascadinglabs.com/voidcrawl/"><img src="https://img.shields.io/badge/docs-cascadinglabs.com%2Fvoidcrawl-7c4dbd?labelColor=120a24" alt="docs"></a>
+</p>
+
+> [!WARNING]
+> **VoidCrawl is currently in Alpha.** The API is expected to change significantly. We do not expect a stable API until we are out of Beta.
+
+# VoidCrawl
 
 **CDP browser automation for Python** — a Rust-native Chrome DevTools Protocol client exposed to Python via PyO3.
 
-`void_crawl` replaces Playwright/Selenium with a permissively-licensed (MIT OR Apache-2.0) stack for rendering JavaScript-heavy pages. Built on [chromiumoxide](https://github.com/mattsse/chromiumoxide) with a shared Tokio runtime.
+`void_crawl` replaces Playwright/Selenium with a permissively-licensed (Apache-2.0) stack for rendering JavaScript-heavy pages. Built on [chromiumoxide](https://github.com/mattsse/chromiumoxide) with a shared Tokio runtime.
 
 > **Used by [Yosoi](https://github.com/CascadingLabs/Yosoi)** — an AI-powered selector discovery tool for resilient web scraping.
 
@@ -291,4 +311,4 @@ All dependencies are MIT or Apache-2.0 licensed — no AGPL exposure.
 
 ## License
 
-MIT OR Apache-2.0
+Apache-2.0
