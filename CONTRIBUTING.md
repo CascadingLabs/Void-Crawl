@@ -1,18 +1,123 @@
-# Contributing to void_crawl
+# Contributing to VoidCrawl
 
 Thanks for contributing! This guide covers the development workflow for the Rust/PyO3 browser automation layer.
 
-## Prerequisites
+## Objectives
+
+VoidCrawl is a Rust-native CDP (Chrome DevTools Protocol) wrapper with Python bindings via PyO3. Contributions that improve browser automation reliability, add new CDP capabilities, or improve the Python binding ergonomics are welcome.
+
+## Clone & Setup
+
+```bash
+git clone https://github.com/CascadingLabs/VoidCrawl.git
+cd VoidCrawl
+```
+
+**Prerequisites:**
 
 | Tool | Version | Install |
-|---|---|---|
-| Rust | ≥ 1.86 | [rustup.rs](https://rustup.rs) |
-| Python | ≥ 3.10 | System or [mise](https://mise.jdx.dev) |
+|------|---------|---------|
+| Rust | >= 1.86 | [rustup.rs](https://rustup.rs) |
+| Python | >= 3.10 | System or [mise](https://mise.jdx.dev) |
 | Chrome/Chromium | Any recent | System package manager |
-| maturin | ≥ 1.7 | `cargo install maturin` |
+| maturin | >= 1.7 | `cargo install maturin` |
 | uv | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 
-## Project layout
+### Install pre-commit hooks
+
+```bash
+uvx prek install
+```
+
+[Prek](https://github.com/thesuperzapper/prek) is a Rust-based pre-commit runner that executes git hooks automatically on every `git commit`, catching issues before they reach CI. It reads the same `.pre-commit-config.yaml` format. In this repo the hooks run cargo fmt and ruff (lint + format) on commit, check for secrets via gitleaks, and enforce conventional commit messages via commitizen. Clippy, cargo deny, and strict ruff are run in the manual stage (CI). To run all hooks manually:
+
+```bash
+uvx prek run --all-files
+```
+
+### Build the extension
+
+```bash
+./build.sh
+```
+
+This runs `maturin develop --release` which compiles the Rust code and installs the Python extension into the active venv.
+
+### Run Rust tests
+
+```bash
+cargo test -p void_crawl_core -- --test-threads=1
+```
+
+Tests **must** run serially (`--test-threads=1`) because each test launches a Chromium process that uses a shared profile directory. Parallel launches cause `SingletonLock` conflicts.
+
+### Run Python tests
+
+```bash
+uv run pytest tests/unit/core/fetcher/test_browser.py -v
+```
+
+### Full CI check
+
+```bash
+uv run poe ci-check
+```
+
+## Linting & Formatting
+
+### Rust
+
+```bash
+cargo check --workspace
+cargo clippy --workspace
+cargo fmt --check
+```
+
+- Follow standard Rust conventions (`rustfmt` defaults)
+- Clippy config lives in `clippy.toml` — enforces cognitive complexity thresholds, MSRV 1.86
+- `print!`/`println!` are disallowed — use `tracing` instead
+- Use `thiserror` for error types — every new error variant goes in `error.rs`
+- Map chromiumoxide errors to `YosoiError` at the boundary, not deep inside methods
+- Builders use the owned-self pattern: `.method(self) -> Self`
+
+### Python
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy .
+```
+
+- Follow the project's `ruff` config (see root `pyproject.toml`)
+- Single quotes, 120-char line length
+- Google-style docstrings
+- Never use `unittest` — always `pytest`
+- Use `tenacity` for retries — never `time.sleep()` in loops
+
+CI runs clippy, cargo test, and ruff on every push and PR. Your PR must pass all checks.
+
+## Pull Request Rules
+
+1. **Branch from `main`** — create a feature branch (`feat/...`, `fix/...`, `docs/...`).
+2. **Keep PRs focused** — one logical change per PR.
+3. **Pass CI** — Rust compilation, clippy, tests, and Python lint must all pass.
+4. **Describe your changes** — every PR should include:
+   - **Intent** — what the PR does and why.
+   - **Changes** — a summary of what was changed.
+   - **GenAI usage** — if you used AI to write any of the code, include the prompts you used.
+   - **Risks** — any risks or side effects this PR might introduce.
+
+### Commit Conventions
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat(driver): add cookie management to Page
+fix(driver): handle Chrome SingletonLock race condition
+test(driver): add stealth config integration test
+```
+
+## Project Layout
 
 ```
 void_crawl/
@@ -25,112 +130,29 @@ void_crawl/
 ├── Cargo.toml             # Workspace root
 ├── pyproject.toml         # maturin build config
 ├── build.sh               # Build helper
-└── void_crawl.pyi       # Python type stubs
+└── void_crawl.pyi         # Python type stubs
 ```
 
-## Development workflow
-
-### 1. Build the extension
-
-```bash
-cd void_crawl
-./build.sh
-```
-
-This runs `maturin develop --release` which compiles the Rust code and installs the Python extension into the active venv.
-
-### 2. Run Rust tests
-
-```bash
-cargo test -p void_crawl_core -- --test-threads=1
-```
-
-Tests **must** run serially (`--test-threads=1`) because each test launches a Chromium process that uses a shared profile directory. Parallel launches cause `SingletonLock` conflicts.
-
-### 3. Run Python tests
-
-From the repository root:
-
-```bash
-uv run pytest tests/unit/core/fetcher/test_browser.py -v
-```
-
-### 4. Type check and lint
-
-```bash
-# Rust
-cargo check --workspace
-cargo clippy --workspace
-
-# Python (from repo root)
-uv run ruff check yosoi/core/fetcher/browser.py
-uv run mypy yosoi/core/fetcher/browser.py
-```
-
-### 5. Full CI check
-
-From the repo root:
-
-```bash
-uv run poe ci-check
-```
-
-## Code style
-
-### Rust
-
-- Follow standard Rust conventions (`rustfmt` defaults)
-- Use `thiserror` for error types — every new error variant goes in `error.rs`
-- Map chromiumoxide errors to `YosoiError` at the boundary, not deep inside methods
-- Builders use the owned-self pattern: `.method(self) -> Self`
-
-### Python
-
-- Follow the project's `ruff` config (see root `pyproject.toml`)
-- Single quotes, 120 char line length
-- Google-style docstrings
-- Never use `unittest` — always `pytest`
-- Use `tenacity` for retries — never `time.sleep()` in loops
-
-### PyO3 bindings
-
-- Every Python-facing async method uses `pyo3_async_runtimes::tokio::future_into_py`
-- The inner Rust object is wrapped in `Arc<Mutex<Option<T>>>` — `Option` for clean shutdown semantics
-- Error conversion: `YosoiError` → `PyRuntimeError` via `to_py_err()`
-- Keep the binding layer thin — business logic belongs in `crates/core/`
-
-## Adding a new Page method
+## Adding a New Page Method
 
 1. **Rust core** (`crates/core/src/page.rs`): Add the async method on `Page`
 2. **PyO3 binding** (`crates/pyo3_bindings/src/lib.rs`): Add corresponding `#[pymethods]` on `PyPage`
 3. **Type stub** (`void_crawl.pyi`): Add the async signature
 4. **Test**: Add a Rust test in `crates/core/tests/integration.rs` and a Python test in `tests/unit/core/fetcher/test_browser.py`
 
-## Adding a new BrowserSession option
+## Adding a New BrowserSession Option
 
 1. Add the field to `BrowserSessionBuilder` in `session.rs`
 2. Wire it through `connect_or_launch()`
 3. Expose it as a kwarg on `PyBrowserSession.__init__` in the bindings
 4. Update the type stub and README
 
-## CI
+## PyO3 Binding Conventions
 
-The GitHub Actions workflow (`.github/workflows/CI.yaml`) runs:
-
-- `cargo check --workspace` — Rust compilation
-- `cargo test -p void_crawl_core -- --test-threads=1` — Rust integration tests
-
-Renovate manages Cargo dependency updates in the `void-crawl-rust-deps` group.
-
-## Commit conventions
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat(driver): add cookie management to Page
-fix(driver): handle Chrome SingletonLock race condition
-test(driver): add stealth config integration test
-```
+- Every Python-facing async method uses `pyo3_async_runtimes::tokio::future_into_py`
+- The inner Rust object is wrapped in `Arc<Mutex<Option<T>>>` — `Option` for clean shutdown semantics
+- Error conversion: `YosoiError` -> `PyRuntimeError` via `to_py_err()`
+- Keep the binding layer thin — business logic belongs in `crates/core/`
 
 ## License
 
