@@ -24,9 +24,14 @@ multiple-versions = "warn"
 wildcards = "deny"
 # Known-unresolvable duplicates pulled in by transitive deps
 skip = [
-    # ring (via reqwest/rustls) needs 0.2; rand (via chromiumoxide/tungstenite) needs 0.3;
-    # pyo3 ecosystem needs 0.4 — all three are deep transitive deps we can't pin away.
+    # getrandom: ring needs 0.2, rand needs 0.3, tempfile needs 0.4 — transitive, unresolvable
     { name = "getrandom" },
+    # r-efi: pulled in by getrandom 0.3 and 0.4 at different versions — transitive
+    { name = "r-efi" },
+    # reqwest: we pin 0.12; chromiumoxide pulls in 0.13 — unresolvable without upstream change
+    { name = "reqwest" },
+    # windows-sys: ring needs 0.52, tokio/tempfile ecosystem needs 0.61 — transitive
+    { name = "windows-sys" },
 ]
 
 [advisories]
