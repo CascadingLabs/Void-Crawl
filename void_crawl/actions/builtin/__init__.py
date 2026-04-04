@@ -1,4 +1,10 @@
-"""Prebaked browser actions."""
+"""Built-in browser actions shipped with void_crawl.
+
+Re-exports every action from the ``click``, ``dom``, ``hover``,
+``input``, ``scroll``, and ``wait`` modules for convenient import::
+
+    from void_crawl.actions import ClickAt, WaitForSelector
+"""
 
 from void_crawl.actions.builtin.click import (
     CdpClick,

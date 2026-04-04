@@ -1,0 +1,49 @@
+name: Generate API Docs
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      exclude:
+        description: "Comma-separated symbol names to exclude from API reference"
+        required: false
+        default: ""
+
+jobs:
+  generate-docs:
+    name: Generate API reference
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@6b9c6063abd6010835c3544eaaeab6a6af3f3f0d # v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Install package (no extras needed — griffe does static analysis)
+        run: uv sync --no-group dev
+
+      - name: Determine version
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME:-$(uv run python -c 'import void_crawl; print(void_crawl.__version__)')}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate API reference
+        run: |
+          uv run python scripts/generate_api_docs.py \
+            --output docs/api-reference.md \
+            --version "${{ steps.version.outputs.tag }}" \
+            --exclude "${{ github.event.inputs.exclude || '' }}"
+
+      - name: Upload generated docs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: api-reference
+          path: docs/api-reference.md

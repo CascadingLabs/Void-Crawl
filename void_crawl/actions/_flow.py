@@ -1,4 +1,9 @@
-"""Compose actions into sequential flows."""
+"""Compose multiple actions into sequential flows.
+
+A :class:`Flow` groups ordered :class:`~void_crawl.actions.ActionNode`
+instances and runs them one-by-one against a single tab, collecting
+every result into a :class:`FlowResult`.
+"""
 
 from __future__ import annotations
 
@@ -12,44 +17,65 @@ if TYPE_CHECKING:
 
 @dataclass
 class FlowResult:
-    """Result of a flow execution."""
+    """Aggregated result of a :class:`Flow` execution.
+
+    Attributes:
+        results: Ordered list of return values, one per action.
+        last: The return value of the final action, or ``None`` for
+            empty flows (read-only property).
+    """
 
     results: list[object] = field(default_factory=list)
 
     @property
     def last(self) -> object:
-        """The result of the final action, or ``None`` for empty flows."""
+        """The return value of the final action, or ``None`` for empty flows."""
         return self.results[-1] if self.results else None
 
 
 class Flow:
     """An ordered sequence of actions executed against a single tab.
 
-    Example::
+    Actions run sequentially in the order added; each result is captured
+    in the returned :class:`FlowResult`.
 
-        flow = Flow(
-            [
-                ClickAt(100, 200),
-                WaitForSelector("#menu", timeout=5.0),
-                ClickElement("#menu-item-3"),
-            ]
-        )
-        result = await flow.run(tab)
-        print(result.last)
+    Args:
+        actions: Initial list of actions.  May be ``None`` or omitted to
+            start with an empty flow and use :meth:`add`.
 
-    Flows can also be built incrementally::
+    Example:
+        Build up-front::
 
-        flow = Flow()
-        flow.add(ClickAt(100, 200))
-        flow.add(WaitForSelector("#menu"))
-        await flow.run(tab)
+            flow = Flow(
+                [
+                    ClickAt(100, 200),
+                    WaitForSelector("#menu", timeout=5.0),
+                    ClickElement("#menu-item-3"),
+                ]
+            )
+            result = await flow.run(tab)
+            print(result.last)
+
+        Build incrementally::
+
+            flow = Flow()
+            flow.add(ClickAt(100, 200))
+            flow.add(WaitForSelector("#menu"))
+            await flow.run(tab)
     """
 
     def __init__(self, actions: list[ActionNode] | None = None) -> None:
         self._actions: list[ActionNode] = list(actions or [])
 
     def add(self, action: ActionNode) -> Flow:
-        """Append an action. Returns *self* for chaining."""
+        """Append an action and return *self* for chaining.
+
+        Args:
+            action: The action to append.
+
+        Returns:
+            This :class:`Flow` instance (for builder-style chaining).
+        """
         self._actions.append(action)
         return self
 
@@ -57,7 +83,15 @@ class Flow:
         return len(self._actions)
 
     async def run(self, tab: Tab) -> FlowResult:
-        """Execute all actions sequentially against *tab*."""
+        """Execute all actions sequentially against *tab*.
+
+        Args:
+            tab: Any object satisfying the :class:`~void_crawl.actions.Tab`
+                protocol.
+
+        Returns:
+            A :class:`FlowResult` containing one result per action.
+        """
         results: list[object] = []
         for action in self._actions:
             result = await action.run(tab)

@@ -1,4 +1,9 @@
-"""Input/form actions -- JS-tier and CDP-tier."""
+"""Input and form actions — JS-tier and CDP-tier.
+
+Provides :class:`SetInputValue`, :class:`ClearInput`,
+:class:`SelectOption`, and :class:`CdpTypeText` for interacting
+with form elements.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,11 @@ class SetInputValue(JsActionNode):
     """Bulk-set an input's value and fire ``input``/``change`` events.
 
     This does **not** simulate individual keystrokes — use
-    :class:`CdpTypeText` for that.
+    :class:`CdpTypeText` for realistic per-character typing.
+
+    Args:
+        selector: CSS selector targeting the ``<input>`` or ``<textarea>``.
+        text: The value to assign.
     """
 
     js = inline_js("""\
@@ -33,7 +42,11 @@ return null;
 
 
 class ClearInput(JsActionNode):
-    """Clear an input field via JS."""
+    """Clear an input field and fire an ``input`` event via JS.
+
+    Args:
+        selector: CSS selector targeting the ``<input>`` or ``<textarea>``.
+    """
 
     js = inline_js("""\
 const el = document.querySelector(__params.selector);
@@ -48,7 +61,12 @@ return null;
 
 
 class SelectOption(JsActionNode):
-    """Select a ``<select>`` option by value via JS."""
+    """Select a ``<select>`` option by value and fire a ``change`` event.
+
+    Args:
+        selector: CSS selector targeting the ``<select>`` element.
+        value: The ``value`` attribute of the ``<option>`` to select.
+    """
 
     js = inline_js("""\
 const el = document.querySelector(__params.selector);
@@ -64,12 +82,21 @@ return null;
 
 
 class CdpTypeText(ActionNode):
-    """Type text character-by-character via CDP key events."""
+    """Type *text* character-by-character via CDP ``Input.dispatchKeyEvent``.
+
+    Each character produces a ``keyDown``/``keyUp`` pair.  This is more
+    realistic than :class:`SetInputValue` and triggers per-keystroke
+    event listeners.
+
+    Args:
+        text: The string to type.
+    """
 
     def __init__(self, text: str) -> None:
         self.text = text
 
     async def run(self, tab: Tab) -> None:
+        """Dispatch ``keyDown``/``keyUp`` pairs for each character in *text*."""
         for ch in self.text:
             await tab.dispatch_key_event("keyDown", key=ch, text=ch)
             await tab.dispatch_key_event("keyUp", key=ch)

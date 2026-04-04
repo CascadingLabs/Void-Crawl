@@ -1,4 +1,19 @@
-"""Extensible browser actions backed by JavaScript or CDP commands."""
+"""Extensible browser actions backed by JavaScript or CDP commands.
+
+This sub-package exposes two tiers of actions:
+
+* **JS-tier** — actions evaluated as JavaScript inside the page
+  (subclass :class:`JsActionNode`).
+* **CDP-tier** — actions that call Chrome DevTools Protocol input
+  methods directly (subclass :class:`ActionNode`).
+
+Actions can be composed into :class:`Flow` sequences and executed
+against any object satisfying the :class:`Tab` protocol (both
+:class:`~void_crawl.Page` and :class:`~void_crawl.PooledTab`).
+
+Custom actions are created by subclassing :class:`ActionNode` or
+:class:`JsActionNode` and implementing :meth:`~ActionNode.run`.
+"""
 
 from void_crawl.actions._base import (
     ActionNode,

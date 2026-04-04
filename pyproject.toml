@@ -68,6 +68,10 @@ sequence = [
   { cmd = "mypy" },
 ]
 
+[tool.poe.tasks.docs]
+help = "Generate API reference markdown from docstrings"
+cmd = "python scripts/generate_api_docs.py --output docs/api-reference.md"
+
 [tool.poe.tasks.ci]
 help = "Full CI pipeline (lint + format + typecheck + test)"
 sequence = [
@@ -128,6 +132,9 @@ ignore = [
 ]
 "examples/**/*.py" = [
   "T20",      # print() is expected in examples
+]
+"**/*.pyi" = [
+  "PIE790",   # `...` after docstrings is standard in stubs
 ]
 
 [tool.ruff.lint.isort]

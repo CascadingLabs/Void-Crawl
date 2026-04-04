@@ -1,4 +1,23 @@
-"""void_crawl — Rust-native CDP browser automation for Python."""
+"""Rust-native CDP browser automation for Python via PyO3.
+
+``void_crawl`` provides async-first browser automation backed by a Rust
+CDP (Chrome DevTools Protocol) core, exposed to Python through PyO3.
+Launch headless or headful Chrome sessions, manage pooled tabs for
+concurrent crawling, and compose reusable browser actions.
+
+Example:
+    Minimal single-page scrape::
+
+        async with BrowserSession() as browser:
+            page = await browser.new_page("https://example.com")
+            html = await page.content()
+
+    Pooled concurrent crawling::
+
+        async with BrowserPool(PoolConfig(browsers=2, tabs_per_browser=4)) as pool:
+            async with pool.acquire() as tab:
+                await tab.navigate("https://example.com")
+"""
 
 from __future__ import annotations
 
@@ -33,13 +52,29 @@ __all__ = [
 
 
 class BrowserConfig(BaseModel):
-    """Configuration for a single browser instance.
+    """Configuration for launching or connecting to a single browser instance.
 
-    Example::
+    Controls headless/headful mode, stealth patches, proxy routing, and
+    custom Chrome flags.  Pass an instance to :class:`BrowserSession` or
+    embed one inside :class:`PoolConfig`.
 
-        cfg = BrowserConfig(headless=False, stealth=True)
-        async with BrowserSession(cfg) as browser:
-            page = await browser.new_page("https://example.com")
+    Attributes:
+        headless: Run Chrome without a visible window. Defaults to ``True``.
+        stealth: Apply anti-detection patches (navigator overrides, etc.).
+            Defaults to ``True``.
+        no_sandbox: Disable the Chrome sandbox. Required in some Docker
+            environments. Defaults to ``False``.
+        proxy: Upstream HTTPS proxy URL, e.g. ``"http://proxy:8080"``.
+        chrome_executable: Path to a custom Chrome/Chromium binary.
+            When ``None``, the bundled Chromium discovery is used.
+        extra_args: Additional command-line flags forwarded to Chrome.
+        ws_url: Connect to an **already-running** Chrome instance via its
+            WebSocket debugger URL instead of launching a new one.
+
+    Example:
+        >>> cfg = BrowserConfig(headless=False, stealth=True)
+        >>> async with BrowserSession(cfg) as browser:
+        ...     page = await browser.new_page("https://example.com")
     """
 
     headless: bool = True
@@ -52,18 +87,34 @@ class BrowserConfig(BaseModel):
 
 
 class PoolConfig(BaseModel):
-    """Configuration for a browser pool.
+    """Configuration for a pool of reusable browser tabs.
 
-    Example::
+    Controls how many Chrome processes to launch, how many concurrent tabs
+    each process may hold, and when tabs are recycled or evicted.
 
-        cfg = PoolConfig(browsers=2, tabs_per_browser=4)
-        async with BrowserPool(cfg) as pool:
-            async with pool.acquire() as tab:
-                await tab.navigate("https://example.com")
+    Attributes:
+        browsers: Number of Chrome processes in the pool. Defaults to ``1``.
+        tabs_per_browser: Maximum concurrent tabs **per** Chrome process.
+            Defaults to ``4``.
+        tab_max_uses: Hard-recycle a tab after this many navigations.
+            Prevents memory leaks in long-running crawls. Defaults to ``50``.
+        tab_max_idle_secs: Evict a tab that has been idle longer than this
+            many seconds. Defaults to ``60``.
+        chrome_ws_urls: Pre-existing Chrome WebSocket debugger URLs.  When
+            non-empty, the pool connects to these instead of launching
+            new processes, and *browsers* is ignored.
+        browser: Shared :class:`BrowserConfig` applied to every Chrome
+            process launched by the pool.
 
-    Load from environment variables::
+    Example:
+        >>> cfg = PoolConfig(browsers=2, tabs_per_browser=4)
+        >>> async with BrowserPool(cfg) as pool:
+        ...     async with pool.acquire() as tab:
+        ...         await tab.navigate("https://example.com")
 
-        cfg = PoolConfig.from_env()
+        Load from environment variables::
+
+            cfg = PoolConfig.from_env()
     """
 
     browsers: int = 1
@@ -75,17 +126,36 @@ class PoolConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> PoolConfig:
-        """Build a PoolConfig from environment variables.
+        """Build a :class:`PoolConfig` from environment variables.
 
-        | Variable             | Description                     | Default |
-        |----------------------|---------------------------------|---------|
-        | ``CHROME_WS_URLS``   | Comma-separated ws/http URLs    | —       |
-        | ``BROWSER_COUNT``    | Chrome processes to launch      | 1       |
-        | ``TABS_PER_BROWSER`` | Max concurrent tabs per browser | 4       |
-        | ``TAB_MAX_USES``     | Hard recycle threshold          | 50      |
-        | ``TAB_MAX_IDLE_SECS``| Idle eviction timeout           | 60      |
-        | ``CHROME_NO_SANDBOX``| Set to "1" to disable sandbox   | —       |
-        | ``CHROME_HEADLESS``  | Set to "0" for headful mode     | 1       |
+        Reads the following variables (all optional):
+
+        +------------------------+---------------------------------+---------+
+        | Variable               | Description                     | Default |
+        +========================+=================================+=========+
+        | ``CHROME_WS_URLS``     | Comma-separated ws/http URLs    | —       |
+        +------------------------+---------------------------------+---------+
+        | ``BROWSER_COUNT``      | Chrome processes to launch      | 1       |
+        +------------------------+---------------------------------+---------+
+        | ``TABS_PER_BROWSER``   | Max concurrent tabs per browser | 4       |
+        +------------------------+---------------------------------+---------+
+        | ``TAB_MAX_USES``       | Hard recycle threshold          | 50      |
+        +------------------------+---------------------------------+---------+
+        | ``TAB_MAX_IDLE_SECS``  | Idle eviction timeout           | 60      |
+        +------------------------+---------------------------------+---------+
+        | ``CHROME_NO_SANDBOX``  | Set to ``"1"`` to disable       | —       |
+        +------------------------+---------------------------------+---------+
+        | ``CHROME_HEADLESS``    | Set to ``"0"`` for headful      | 1       |
+        +------------------------+---------------------------------+---------+
+
+        Returns:
+            A fully-populated :class:`PoolConfig`.
+
+        Example:
+            >>> cfg = PoolConfig.from_env()
+            >>> async with BrowserPool(cfg) as pool:
+            ...     async with pool.acquire() as tab:
+            ...         await tab.navigate("https://example.com")
         """
         ws_urls_raw = os.environ.get("CHROME_WS_URLS", "")
         chrome_ws_urls = [u.strip() for u in ws_urls_raw.split(",") if u.strip()]
@@ -113,13 +183,20 @@ class PoolConfig(BaseModel):
 
 
 class BrowserSession:
-    """Browser session wrapping a Chromium instance via CDP.
+    """Async context manager wrapping a single Chromium instance via CDP.
 
-    Example::
+    Use as an ``async with`` block.  On entry the browser is launched (or
+    connected to, if :attr:`BrowserConfig.ws_url` is set); on exit the
+    process is terminated and resources are freed.
 
-        async with BrowserSession(BrowserConfig(headless=False)) as browser:
-            page = await browser.new_page("https://example.com")
-            html = await page.content()
+    Args:
+        config: Browser launch options.  Defaults to
+            ``BrowserConfig()`` (headless + stealth).
+
+    Example:
+        >>> async with BrowserSession(BrowserConfig(headless=False)) as browser:
+        ...     page = await browser.new_page("https://example.com")
+        ...     html = await page.content()
     """
 
     def __init__(self, config: BrowserConfig | None = None) -> None:
@@ -148,17 +225,28 @@ class BrowserSession:
         return False
 
     async def new_page(self, url: str) -> Page:
-        """Open a new tab and navigate to url."""
+        """Open a new tab and navigate to *url*.
+
+        Args:
+            url: The URL to load in the new tab.
+
+        Returns:
+            A :class:`Page` handle for the new tab.
+        """
         assert self._inner is not None, "BrowserSession not started — use async with"
         return await self._inner.new_page(url)
 
     async def version(self) -> str:
-        """Return the browser version string."""
+        """Return the browser version string (e.g. ``"Chrome/126.0.6478.126"``)."""
         assert self._inner is not None, "BrowserSession not started — use async with"
         return await self._inner.version()
 
     async def close(self) -> None:
-        """Close the browser."""
+        """Shut down the browser process immediately.
+
+        Called automatically on ``__aexit__``; only needed if you want
+        to close the browser without leaving the ``async with`` block.
+        """
         if self._inner is not None:
             await self._inner.close()
 
@@ -175,20 +263,28 @@ class BrowserSession:
 
 
 class BrowserPool:
-    """Pool of reusable browser tabs across one or more Chrome sessions.
+    """Pool of reusable browser tabs across one or more Chrome processes.
 
-    Example::
+    Manages a semaphore-bounded set of recycled tabs.  Tabs are navigated
+    to ``about:blank`` on release rather than closed, making subsequent
+    acquires near-instant.  Tabs are hard-recycled after
+    :attr:`PoolConfig.tab_max_uses` navigations and evicted after
+    :attr:`PoolConfig.tab_max_idle_secs` of inactivity.
 
-        cfg = PoolConfig(browsers=2, tabs_per_browser=4)
-        async with BrowserPool(cfg) as pool:
-            async with pool.acquire() as tab:
-                await tab.navigate("https://example.com")
-                html = await tab.content()
+    Args:
+        config: Pool sizing and browser launch options.
 
-    Load config from environment::
+    Example:
+        >>> cfg = PoolConfig(browsers=2, tabs_per_browser=4)
+        >>> async with BrowserPool(cfg) as pool:
+        ...     async with pool.acquire() as tab:
+        ...         await tab.navigate("https://example.com")
+        ...         html = await tab.content()
 
-        async with BrowserPool(PoolConfig.from_env()) as pool:
-            ...
+        Load config from environment::
+
+            async with BrowserPool(PoolConfig.from_env()) as pool:
+                ...
     """
 
     def __init__(self, config: PoolConfig) -> None:
@@ -222,18 +318,27 @@ class BrowserPool:
         return False
 
     def acquire(self) -> _AcquireContext:
-        """Return a context manager that checks out a tab from the pool.
+        """Check out a tab from the pool as an async context manager.
 
-        Example::
+        The tab is automatically returned to the pool when the context
+        exits, even on exception.
 
-            async with pool.acquire() as tab:
-                await tab.navigate("https://example.com")
+        Returns:
+            An async context manager yielding a :class:`PooledTab`.
+
+        Example:
+            >>> async with pool.acquire() as tab:
+            ...     await tab.navigate("https://example.com")
         """
         assert self._inner is not None, "BrowserPool not started — use async with"
         return self._inner.acquire()
 
     async def warmup(self) -> None:
-        """Pre-open tabs across all sessions for faster first acquires."""
+        """Pre-open tabs across all browser sessions.
+
+        Call after entering the pool context to eliminate cold-start
+        latency on the first :meth:`acquire` calls.
+        """
         assert self._inner is not None, "BrowserPool not started — use async with"
         await self._inner.warmup()
 

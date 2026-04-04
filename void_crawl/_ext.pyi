@@ -6,25 +6,126 @@ Internal — import from ``void_crawl`` instead.
 from __future__ import annotations
 
 class PooledTab:
+    """A tab checked out from a :class:`~void_crawl.BrowserPool`.
+
+    Exposes the same page-interaction methods as :class:`Page` but must
+    not be closed manually — return it to the pool via the async context
+    manager or :meth:`~void_crawl.BrowserPool.release`.
+
+    Attributes:
+        use_count: How many times this tab has been acquired (0 on first use).
+    """
+
     use_count: int
 
-    async def goto(self, url: str, timeout: float = 30.0) -> str | None: ...
-    async def navigate(self, url: str) -> None: ...
-    async def wait_for_navigation(self) -> None: ...
-    async def content(self) -> str: ...
-    async def title(self) -> str | None: ...
-    async def url(self) -> str | None: ...
-    async def evaluate_js(self, expression: str) -> object: ...
-    async def screenshot_png(self) -> bytes: ...
-    async def query_selector(self, selector: str) -> str | None: ...
-    async def query_selector_all(self, selector: str) -> list[str]: ...
-    async def click_element(self, selector: str) -> None: ...
-    async def type_into(self, selector: str, text: str) -> None: ...
-    async def set_headers(self, headers: dict[str, str]) -> None: ...
+    async def goto(self, url: str, timeout: float = 30.0) -> str | None:
+        """Navigate to *url* and wait for network idle in one shot.
+
+        Args:
+            url: The URL to load.
+            timeout: Maximum seconds to wait for network idle.
+
+        Returns:
+            ``"networkIdle"`` or ``"networkAlmostIdle"`` on success,
+            ``None`` on timeout.
+        """
+        ...
+    async def navigate(self, url: str) -> None:
+        """Navigate to *url* without waiting for any load event.
+
+        Args:
+            url: The URL to load.
+        """
+        ...
+    async def wait_for_navigation(self) -> None:
+        """Block until the current navigation completes."""
+        ...
+    async def content(self) -> str:
+        """Return the full page HTML (``document.documentElement.outerHTML``)."""
+        ...
+    async def title(self) -> str | None:
+        """Return the document title, or ``None``."""
+        ...
+    async def url(self) -> str | None:
+        """Return the current page URL, or ``None``."""
+        ...
+    async def evaluate_js(self, expression: str) -> object:
+        """Evaluate a JavaScript *expression* and return the result.
+
+        The return value is deserialised to a native Python type
+        (``dict``, ``list``, ``str``, ``int``, ``float``, ``bool``, or ``None``).
+
+        Args:
+            expression: JavaScript expression or IIFE string.
+        """
+        ...
+    async def screenshot_png(self) -> bytes:
+        """Capture a full-page screenshot as PNG bytes."""
+        ...
+    async def query_selector(self, selector: str) -> str | None:
+        """Return the outer HTML of the first element matching *selector*, or ``None``.
+
+        Args:
+            selector: CSS selector string.
+        """
+        ...
+    async def query_selector_all(self, selector: str) -> list[str]:
+        """Return the outer HTML of every element matching *selector*.
+
+        Args:
+            selector: CSS selector string.
+        """
+        ...
+    async def click_element(self, selector: str) -> None:
+        """Click the first element matching *selector*.
+
+        Args:
+            selector: CSS selector string.
+        """
+        ...
+    async def type_into(self, selector: str, text: str) -> None:
+        """Focus the first element matching *selector* and type *text*.
+
+        Args:
+            selector: CSS selector string.
+            text: The text to type.
+        """
+        ...
+    async def set_headers(self, headers: dict[str, str]) -> None:
+        """Set extra HTTP headers for all subsequent requests from this tab.
+
+        Args:
+            headers: Header name-value pairs.
+        """
+        ...
     async def wait_for_stable_dom(
         self, timeout: float = 10.0, min_length: int = 5000, stable_checks: int = 5
-    ) -> bool: ...
-    async def wait_for_network_idle(self, timeout: float = 30.0) -> str | None: ...
+    ) -> bool:
+        """Wait until the DOM stabilises (stops changing).
+
+        Polls the HTML length repeatedly and resolves once it stays
+        constant across *stable_checks* consecutive checks.
+
+        Args:
+            timeout: Maximum seconds to wait.
+            min_length: Minimum HTML length before checking stability.
+            stable_checks: Consecutive unchanged polls required.
+
+        Returns:
+            ``True`` if the DOM stabilised, ``False`` on timeout.
+        """
+        ...
+    async def wait_for_network_idle(self, timeout: float = 30.0) -> str | None:
+        """Wait for network activity to settle.
+
+        Args:
+            timeout: Maximum seconds to wait.
+
+        Returns:
+            ``"networkIdle"`` or ``"networkAlmostIdle"`` on success,
+            ``None`` on timeout.
+        """
+        ...
     async def dispatch_mouse_event(
         self,
         event_type: str,
@@ -35,7 +136,21 @@ class PooledTab:
         delta_x: float | None = None,
         delta_y: float | None = None,
         modifiers: int | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Send a low-level CDP ``Input.dispatchMouseEvent``.
+
+        Args:
+            event_type: One of ``"mousePressed"``, ``"mouseReleased"``,
+                ``"mouseMoved"``, or ``"mouseWheel"``.
+            x: Horizontal page coordinate.
+            y: Vertical page coordinate.
+            button: ``"left"``, ``"right"``, or ``"middle"``.
+            click_count: Number of clicks (usually ``1``).
+            delta_x: Horizontal scroll delta (``mouseWheel`` only).
+            delta_y: Vertical scroll delta (``mouseWheel`` only).
+            modifiers: Bit field for modifier keys (Ctrl=1, Shift=2, etc.).
+        """
+        ...
     async def dispatch_key_event(
         self,
         event_type: str,
@@ -43,7 +158,17 @@ class PooledTab:
         code: str | None = None,
         text: str | None = None,
         modifiers: int | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Send a low-level CDP ``Input.dispatchKeyEvent``.
+
+        Args:
+            event_type: ``"keyDown"``, ``"keyUp"``, ``"rawKeyDown"``, or ``"char"``.
+            key: DOM ``KeyboardEvent.key`` value (e.g. ``"Enter"``).
+            code: Physical key code (e.g. ``"KeyA"``).
+            text: Character to insert (e.g. ``"a"``).
+            modifiers: Bit field for modifier keys.
+        """
+        ...
 
 class _AcquireContext:
     async def __aenter__(self) -> PooledTab: ...
@@ -64,6 +189,11 @@ class _PoolParamsContext:
     ) -> bool: ...
 
 class BrowserPool:
+    """Rust-side pool of reusable browser tabs (internal).
+
+    Use the Python wrapper :class:`~void_crawl.BrowserPool` instead.
+    """
+
     @classmethod
     def from_env(cls) -> _PoolContext: ...
     @classmethod
@@ -90,24 +220,127 @@ class BrowserPool:
     ) -> bool: ...
 
 class Page:
-    async def goto(self, url: str, timeout: float = 30.0) -> str | None: ...
-    async def navigate(self, url: str) -> None: ...
-    async def wait_for_navigation(self) -> None: ...
-    async def content(self) -> str: ...
-    async def title(self) -> str | None: ...
-    async def url(self) -> str | None: ...
-    async def evaluate_js(self, expression: str) -> object: ...
-    async def screenshot_png(self) -> bytes: ...
-    async def pdf_bytes(self) -> bytes: ...
-    async def query_selector(self, selector: str) -> str | None: ...
-    async def query_selector_all(self, selector: str) -> list[str]: ...
-    async def click_element(self, selector: str) -> None: ...
-    async def type_into(self, selector: str, text: str) -> None: ...
-    async def set_headers(self, headers: dict[str, str]) -> None: ...
+    """A single browser tab created via :meth:`BrowserSession.new_page`.
+
+    Provides navigation, content extraction, JavaScript evaluation,
+    media capture, DOM queries, user-interaction helpers, and low-level
+    CDP input dispatch.
+    """
+
+    async def goto(self, url: str, timeout: float = 30.0) -> str | None:
+        """Navigate to *url* and wait for network idle in one shot.
+
+        Args:
+            url: The URL to load.
+            timeout: Maximum seconds to wait for network idle.
+
+        Returns:
+            ``"networkIdle"`` or ``"networkAlmostIdle"`` on success,
+            ``None`` on timeout.
+        """
+        ...
+    async def navigate(self, url: str) -> None:
+        """Navigate to *url* without waiting for any load event.
+
+        Args:
+            url: The URL to load.
+        """
+        ...
+    async def wait_for_navigation(self) -> None:
+        """Block until the current navigation completes."""
+        ...
+    async def content(self) -> str:
+        """Return the full page HTML (``document.documentElement.outerHTML``)."""
+        ...
+    async def title(self) -> str | None:
+        """Return the document title, or ``None``."""
+        ...
+    async def url(self) -> str | None:
+        """Return the current page URL, or ``None``."""
+        ...
+    async def evaluate_js(self, expression: str) -> object:
+        """Evaluate a JavaScript *expression* and return the result.
+
+        The return value is deserialised to a native Python type
+        (``dict``, ``list``, ``str``, ``int``, ``float``, ``bool``, or ``None``).
+
+        Args:
+            expression: JavaScript expression or IIFE string.
+        """
+        ...
+    async def screenshot_png(self) -> bytes:
+        """Capture a full-page screenshot as PNG bytes."""
+        ...
+    async def pdf_bytes(self) -> bytes:
+        """Render the page as a PDF and return the raw bytes.
+
+        Only works in headless mode.
+        """
+        ...
+    async def query_selector(self, selector: str) -> str | None:
+        """Return the outer HTML of the first element matching *selector*, or ``None``.
+
+        Args:
+            selector: CSS selector string.
+        """
+        ...
+    async def query_selector_all(self, selector: str) -> list[str]:
+        """Return the outer HTML of every element matching *selector*.
+
+        Args:
+            selector: CSS selector string.
+        """
+        ...
+    async def click_element(self, selector: str) -> None:
+        """Click the first element matching *selector*.
+
+        Args:
+            selector: CSS selector string.
+        """
+        ...
+    async def type_into(self, selector: str, text: str) -> None:
+        """Focus the first element matching *selector* and type *text*.
+
+        Args:
+            selector: CSS selector string.
+            text: The text to type.
+        """
+        ...
+    async def set_headers(self, headers: dict[str, str]) -> None:
+        """Set extra HTTP headers for all subsequent requests from this page.
+
+        Args:
+            headers: Header name-value pairs.
+        """
+        ...
     async def wait_for_stable_dom(
         self, timeout: float = 10.0, min_length: int = 5000, stable_checks: int = 5
-    ) -> bool: ...
-    async def wait_for_network_idle(self, timeout: float = 30.0) -> str | None: ...
+    ) -> bool:
+        """Wait until the DOM stabilises (stops changing).
+
+        Polls the HTML length repeatedly and resolves once it stays
+        constant across *stable_checks* consecutive checks.
+
+        Args:
+            timeout: Maximum seconds to wait.
+            min_length: Minimum HTML length before checking stability.
+            stable_checks: Consecutive unchanged polls required.
+
+        Returns:
+            ``True`` if the DOM stabilised, ``False`` on timeout.
+        """
+        ...
+    async def wait_for_network_idle(self, timeout: float = 30.0) -> str | None:
+        """Wait for network activity to settle.
+
+        Args:
+            timeout: Maximum seconds to wait.
+
+        Returns:
+            ``"networkIdle"`` or ``"networkAlmostIdle"`` on success,
+            ``None`` on timeout.
+        """
+        ...
     async def dispatch_mouse_event(
         self,
         event_type: str,
@@ -118,7 +351,21 @@ class Page:
         delta_x: float | None = None,
         delta_y: float | None = None,
         modifiers: int | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Send a low-level CDP ``Input.dispatchMouseEvent``.
+
+        Args:
+            event_type: One of ``"mousePressed"``, ``"mouseReleased"``,
+                ``"mouseMoved"``, or ``"mouseWheel"``.
+            x: Horizontal page coordinate.
+            y: Vertical page coordinate.
+            button: ``"left"``, ``"right"``, or ``"middle"``.
+            click_count: Number of clicks (usually ``1``).
+            delta_x: Horizontal scroll delta (``mouseWheel`` only).
+            delta_y: Vertical scroll delta (``mouseWheel`` only).
+            modifiers: Bit field for modifier keys (Ctrl=1, Shift=2, etc.).
+        """
+        ...
     async def dispatch_key_event(
         self,
         event_type: str,
@@ -126,10 +373,27 @@ class Page:
         code: str | None = None,
         text: str | None = None,
         modifiers: int | None = None,
-    ) -> None: ...
-    async def close(self) -> None: ...
+    ) -> None:
+        """Send a low-level CDP ``Input.dispatchKeyEvent``.
+
+        Args:
+            event_type: ``"keyDown"``, ``"keyUp"``, ``"rawKeyDown"``, or ``"char"``.
+            key: DOM ``KeyboardEvent.key`` value (e.g. ``"Enter"``).
+            code: Physical key code (e.g. ``"KeyA"``).
+            text: Character to insert (e.g. ``"a"``).
+            modifiers: Bit field for modifier keys.
+        """
+        ...
+    async def close(self) -> None:
+        """Close this tab and release its resources."""
+        ...
 
 class BrowserSession:
+    """Rust-side browser session (internal).
+
+    Use the Python wrapper :class:`~void_crawl.BrowserSession` instead.
+    """
+
     def __init__(
         self,
         *,

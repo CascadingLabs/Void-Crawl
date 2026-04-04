@@ -1,4 +1,8 @@
-"""DOM query/mutation actions (JS-tier)."""
+"""DOM query and mutation actions (JS-tier).
+
+Provides :class:`GetAttribute`, :class:`GetText`, and
+:class:`SetAttribute` for reading and writing DOM element properties.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,15 @@ from void_crawl.actions._base import JsActionNode, inline_js
 
 
 class GetAttribute(JsActionNode):
-    """Get an attribute value from an element."""
+    """Read an HTML attribute from the first matching element.
+
+    Returns ``None`` if the element is not found.  The result is
+    available as the return value of :meth:`run` (``str | None``).
+
+    Args:
+        selector: CSS selector targeting the element.
+        attr: Attribute name (e.g. ``"href"``, ``"data-id"``).
+    """
 
     js = inline_js("""\
 const el = document.querySelector(__params.selector);
@@ -20,7 +32,14 @@ return el.getAttribute(__params.attr);
 
 
 class GetText(JsActionNode):
-    """Get ``textContent`` from an element."""
+    """Read ``textContent`` from the first matching element.
+
+    Returns ``None`` if the element is not found.  The result is
+    available as the return value of :meth:`run` (``str | None``).
+
+    Args:
+        selector: CSS selector targeting the element.
+    """
 
     js = inline_js("""\
 const el = document.querySelector(__params.selector);
@@ -33,7 +52,15 @@ return el.textContent;
 
 
 class SetAttribute(JsActionNode):
-    """Set an attribute on an element."""
+    """Set an HTML attribute on the first matching element.
+
+    Raises a JS ``Error`` if no element matches the selector.
+
+    Args:
+        selector: CSS selector targeting the element.
+        attr: Attribute name to set.
+        value: Attribute value to assign.
+    """
 
     js = inline_js("""\
 const el = document.querySelector(__params.selector);

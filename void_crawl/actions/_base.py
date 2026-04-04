@@ -1,4 +1,10 @@
-"""Base action node abstraction."""
+"""Base action node abstraction.
+
+Provides :class:`ActionNode` (the abstract base for all browser actions),
+:class:`JsActionNode` (the JavaScript-backed variant), and the
+:class:`JsSource` / :func:`load_js` / :func:`inline_js` helpers for
+packaging JS snippets.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,15 @@ if TYPE_CHECKING:
 
 
 class JsSource:
-    """Holds a JS snippet -- loaded from a file or defined inline."""
+    """Immutable wrapper around a JavaScript snippet string.
+
+    Created via :func:`load_js` (file-based) or :func:`inline_js`
+    (string literal).  Used as the ``js`` class attribute on
+    :class:`JsActionNode` subclasses.
+
+    Args:
+        js: Raw JavaScript source code.
+    """
 
     __slots__ = ("_js",)
 
@@ -22,6 +36,7 @@ class JsSource:
 
     @property
     def js(self) -> str:
+        """The raw JavaScript source string."""
         return self._js
 
     def __repr__(self) -> str:
@@ -34,10 +49,17 @@ class JsSource:
 
 
 def load_js(path: str | Path) -> JsSource:
-    """Load JavaScript from a ``.js`` file.
+    """Load JavaScript from a ``.js`` file on disk.
 
-    Absolute paths are used as-is. Relative paths are resolved from the
-    caller's source file.
+    Absolute paths are used as-is.  Relative paths are resolved from the
+    **caller's** source file, so ``load_js("click_at.js")`` works when
+    the ``.js`` lives next to the calling ``.py``.
+
+    Args:
+        path: Filesystem path to the ``.js`` file.
+
+    Returns:
+        A :class:`JsSource` containing the file contents.
     """
     p = Path(path)
     if not p.is_absolute():
@@ -47,7 +69,14 @@ def load_js(path: str | Path) -> JsSource:
 
 
 def inline_js(code: str) -> JsSource:
-    """Define JavaScript inline."""
+    """Create a :class:`JsSource` from an inline string literal.
+
+    Args:
+        code: Raw JavaScript source code.
+
+    Returns:
+        A :class:`JsSource` wrapping *code*.
+    """
     return JsSource(code)
 
 
@@ -62,14 +91,26 @@ def _build_expression(js_source: JsSource, params: dict[str, Any]) -> str:
 
 
 class ActionNode(ABC):
-    """Base class for all browser actions.
+    """Abstract base for all browser actions.
 
-    Subclasses override :meth:`run` to execute against a tab.
+    Subclass and implement :meth:`run` to create a custom action.  Use
+    :class:`JsActionNode` when the action can be expressed as a single
+    JavaScript snippet; subclass ``ActionNode`` directly for CDP-level
+    actions that need :meth:`~void_crawl.actions.Tab.dispatch_mouse_event`
+    or :meth:`~void_crawl.actions.Tab.dispatch_key_event`.
     """
 
     @abstractmethod
     async def run(self, tab: Tab) -> object:
-        """Execute this action against *tab*. Returns the JS/CDP result."""
+        """Execute this action against *tab*.
+
+        Args:
+            tab: Any object satisfying the :class:`~void_crawl.actions.Tab`
+                protocol (e.g. :class:`Page` or :class:`PooledTab`).
+
+        Returns:
+            The action result — type varies by action.
+        """
         ...
 
     def __repr__(self) -> str:
@@ -77,39 +118,52 @@ class ActionNode(ABC):
 
 
 class JsActionNode(ActionNode):
-    """Action backed by a JavaScript snippet.
+    """Action executed by evaluating a JavaScript snippet in the page.
 
     Subclasses set the ``js`` class attribute (via :func:`load_js` or
     :func:`inline_js`) and store their parameters as instance attributes
-    in ``__init__``.  By default, :meth:`params` returns all instance
-    attributes (via ``vars(self)``), so most subclasses don't need to
-    override it.
+    in ``__init__``.  At execution time, all instance attributes are
+    serialised to JSON and injected as the ``__params`` object visible
+    inside the snippet.
 
-    Example::
+    By default :meth:`params` returns ``vars(self)``; override it only
+    if you need to transform or filter attributes.
 
-        class ClickAt(JsActionNode):
-            js = inline_js('''
-                const el = document.elementFromPoint(__params.x, __params.y);
-                if (el) el.click();
-                return el ? el.tagName : null;
-            ''')
-
-            def __init__(self, x: int, y: int) -> None:
-                self.x = x
-                self.y = y
+    Example:
+        >>> class ClickAt(JsActionNode):
+        ...     js = inline_js('''
+        ...         const el = document.elementFromPoint(__params.x, __params.y);
+        ...         if (el) el.click();
+        ...         return el ? el.tagName : null;
+        ...     ''')
+        ...
+        ...     def __init__(self, x: int, y: int) -> None:
+        ...         self.x = x
+        ...         self.y = y
     """
 
     js: JsSource
 
     def params(self) -> dict[str, Any]:
-        """Return the parameters to inject as ``__params`` in JS.
+        """Return the parameters injected as ``__params`` in the JS snippet.
 
-        Defaults to ``vars(self)`` — override only if you need to
-        transform or filter attributes.
+        Defaults to ``vars(self)``.  Override to transform, rename, or
+        filter attributes before they reach JavaScript.
+
+        Returns:
+            A JSON-serialisable dict of parameter names to values.
         """
         return vars(self)
 
     async def run(self, tab: JsTab) -> object:
+        """Evaluate the JS snippet in *tab* with the current :meth:`params`.
+
+        Args:
+            tab: Any object satisfying :class:`~void_crawl.actions.JsTab`.
+
+        Returns:
+            The JSON-deserialised return value from the snippet.
+        """
         expression = _build_expression(self.js, self.params())
         return await tab.evaluate_js(expression)
 

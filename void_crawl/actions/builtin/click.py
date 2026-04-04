@@ -1,4 +1,9 @@
-"""Click actions -- both JS-tier and CDP-tier."""
+"""Click actions — both JS-tier and CDP-tier.
+
+Provides coordinate-based clicks (:class:`ClickAt`, :class:`CdpClick`),
+selector-based clicks (:class:`ClickElement`), and a long-press action
+(:class:`CdpClickAndHold`).
+"""
 
 from __future__ import annotations
 
@@ -15,7 +20,15 @@ _JS_DIR = Path(__file__).parent.parent / "js"
 
 
 class ClickAt(JsActionNode):
-    """Click the element at page coordinates ``(x, y)`` via JS events."""
+    """Click the element at page coordinates ``(x, y)`` via JS events.
+
+    Uses ``document.elementFromPoint`` to resolve the target and
+    dispatches synthetic mouse events.
+
+    Args:
+        x: Horizontal page coordinate (pixels from left).
+        y: Vertical page coordinate (pixels from top).
+    """
 
     js = load_js(_JS_DIR / "click_at.js")
 
@@ -25,7 +38,13 @@ class ClickAt(JsActionNode):
 
 
 class ClickElement(JsActionNode):
-    """Click the first element matching a CSS selector via JS."""
+    """Click the first element matching a CSS *selector* via JS.
+
+    Raises a JS ``Error`` if no element matches.
+
+    Args:
+        selector: CSS selector string (e.g. ``"#submit-btn"``).
+    """
 
     js = inline_js("""\
 const el = document.querySelector(__params.selector);
@@ -39,7 +58,17 @@ return null;
 
 
 class CdpClick(ActionNode):
-    """Click at ``(x, y)`` via CDP ``Input.dispatchMouseEvent``."""
+    """Click at ``(x, y)`` via CDP ``Input.dispatchMouseEvent``.
+
+    Sends a ``mousePressed`` followed by ``mouseReleased``.  More
+    realistic than JS-level clicks — useful for pages that inspect
+    event coordinates.
+
+    Args:
+        x: Horizontal page coordinate.
+        y: Vertical page coordinate.
+        button: Mouse button — ``"left"``, ``"right"``, or ``"middle"``.
+    """
 
     def __init__(self, x: float, y: float, button: str = "left") -> None:
         self.x = x
@@ -47,6 +76,7 @@ class CdpClick(ActionNode):
         self.button = button
 
     async def run(self, tab: Tab) -> None:
+        """Dispatch ``mousePressed`` then ``mouseReleased`` at ``(x, y)``."""
         await tab.dispatch_mouse_event(
             "mousePressed", self.x, self.y, button=self.button, click_count=1
         )
@@ -59,7 +89,16 @@ class CdpClick(ActionNode):
 
 
 class CdpClickAndHold(ActionNode):
-    """Mouse down, hold for *duration_ms*, then mouse up via CDP."""
+    """Mouse-down, hold for *duration_ms*, then mouse-up via CDP.
+
+    Useful for triggering long-press menus or drag initialisation.
+
+    Args:
+        x: Horizontal page coordinate.
+        y: Vertical page coordinate.
+        duration_ms: How long to hold the button, in milliseconds.
+        button: Mouse button — ``"left"``, ``"right"``, or ``"middle"``.
+    """
 
     def __init__(
         self, x: float, y: float, duration_ms: int = 500, button: str = "left"
@@ -70,6 +109,7 @@ class CdpClickAndHold(ActionNode):
         self.button = button
 
     async def run(self, tab: Tab) -> None:
+        """Press, hold for *duration_ms*, then release at ``(x, y)``."""
         await tab.dispatch_mouse_event(
             "mousePressed", self.x, self.y, button=self.button, click_count=1
         )
