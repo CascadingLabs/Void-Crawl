@@ -9,8 +9,8 @@ from pydantic import BaseModel
 
 __all__ = [
     "Attr",
-    "Contract",
-    "Selector",
+    "Schema",
+    "Text",
     "safe_url",
     "strip_tags",
 ]
@@ -23,7 +23,7 @@ def strip_tags(value: str | None) -> str | None:
     """Strip HTML tag-like substrings from *value*."""
     ...
 
-def Selector(  # noqa: N802
+def Text(  # noqa: N802
     css: str,
     *,
     sanitize: Callable[[str | None], str | None] | None = None,
@@ -55,21 +55,21 @@ def Attr(  # noqa: N802
     """
     ...
 
-class Contract(BaseModel):
-    """Base class for declarative scrape result models.
+class Schema(BaseModel):
+    """Base class for declarative DOM extraction models.
 
-    Subclass and annotate fields with :func:`Selector` or :func:`Attr` to
+    Subclass and annotate fields with :func:`Text` or :func:`Attr` to
     declare how each field is extracted from the DOM.
 
     Example::
 
-        class Article(Contract):
-            headline: str = Selector("h2")
+        class Article(Schema):
+            headline: str = Text("h2")
             url: str | None = Attr("a", "href", sanitize=safe_url)
-            excerpt: str | None = Selector(".summary", sanitize=strip_tags)
+            excerpt: str | None = Text(".summary", sanitize=strip_tags)
     """
 
     @classmethod
-    def _vd_fields_spec(cls) -> dict[str, str | tuple[str, str]]:
+    def _vc_fields_spec(cls) -> dict[str, str | tuple[str, str]]:
         """Build the ``fields`` dict expected by QueryAll."""
         ...

@@ -16,7 +16,7 @@ Example:
 
         async with BrowserPool(PoolConfig(browsers=2, tabs_per_browser=4)) as pool:
             async with pool.acquire() as tab:
-                await tab.navigate("https://example.com")
+                resp = await tab.goto("https://example.com")
 """
 
 from __future__ import annotations
@@ -33,22 +33,27 @@ from voidcrawl._ext import (
 )
 from voidcrawl._ext import (
     Page,
+    PageResponse,
     PooledTab,
     _AcquireContext,
     _PoolParamsContext,
 )
-from voidcrawl.contracts import Attr, Contract, Selector, safe_url, strip_tags
+from voidcrawl.actions._protocol import JsTab, Tab
+from voidcrawl.contracts import Attr, Schema, Text, safe_url, strip_tags
 
 __all__ = [
     "Attr",
     "BrowserConfig",
     "BrowserPool",
     "BrowserSession",
-    "Contract",
+    "JsTab",
     "Page",
+    "PageResponse",
     "PoolConfig",
     "PooledTab",
-    "Selector",
+    "Schema",
+    "Tab",
+    "Text",
     "safe_url",
     "strip_tags",
 ]
@@ -127,6 +132,7 @@ class PoolConfig(BaseModel):
     tabs_per_browser: int = 4
     tab_max_uses: int = 50
     tab_max_idle_secs: int = 60
+    auto_evict: bool = True
     chrome_ws_urls: list[str] = Field(default_factory=list)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
 
@@ -239,7 +245,8 @@ class BrowserSession:
         Returns:
             The new tab handle.
         """
-        assert self._inner is not None, "BrowserSession not started — use async with"
+        if self._inner is None:
+            raise RuntimeError("BrowserSession not started — use async with")
         return await self._inner.new_page(url)
 
     async def version(self) -> str:
@@ -248,7 +255,8 @@ class BrowserSession:
         Returns:
             The Chrome/Chromium product version reported by the browser.
         """
-        assert self._inner is not None, "BrowserSession not started — use async with"
+        if self._inner is None:
+            raise RuntimeError("BrowserSession not started — use async with")
         return await self._inner.version()
 
     async def close(self) -> None:
@@ -309,6 +317,7 @@ class BrowserPool:
             tabs_per_browser=cfg.tabs_per_browser,
             tab_max_uses=cfg.tab_max_uses,
             tab_max_idle_secs=cfg.tab_max_idle_secs,
+            auto_evict=cfg.auto_evict,
             headless=bc.headless,
             no_sandbox=bc.no_sandbox,
             stealth=bc.stealth,
@@ -340,7 +349,8 @@ class BrowserPool:
             >>> async with pool.acquire() as tab:
             ...     await tab.navigate("https://example.com")
         """
-        assert self._inner is not None, "BrowserPool not started — use async with"
+        if self._inner is None:
+            raise RuntimeError("BrowserPool not started — use async with")
         return self._inner.acquire()
 
     async def warmup(self) -> None:
@@ -349,7 +359,8 @@ class BrowserPool:
         Call after entering the pool context to eliminate cold-start
         latency on the first :meth:`acquire` calls.
         """
-        assert self._inner is not None, "BrowserPool not started — use async with"
+        if self._inner is None:
+            raise RuntimeError("BrowserPool not started — use async with")
         await self._inner.warmup()
 
     def __repr__(self) -> str:

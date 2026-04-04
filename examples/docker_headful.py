@@ -18,10 +18,10 @@ Watch Chrome live in your browser:
     (Or use a VNC client on localhost:5900 for lower latency.)
 
 What you'll see:
-    - Chrome navigating to Wikipedia
-    - The page fully rendering with images, CSS, layout
+    - Chrome navigating to qscrape.dev/l2/news (Mountainhome Herald)
+    - The Astro JS islands hydrating and content appearing
     - A screenshot being captured
-    - Chrome navigating to a second URL
+    - Chrome navigating to a second qscrape.dev/l2 site
     - Everything happens in real time
 """
 
@@ -43,9 +43,10 @@ async def main() -> None:
     async with BrowserPool(config) as pool:
         # ── Basic navigation ─────────────────────────────────────────
         async with pool.acquire() as tab:
-            # goto() combines navigate + wait-for-network-idle in one shot.
+            # goto() combines navigate + wait_for_network_idle — needed for
+            # Astro client:only islands that render content after page load.
             event = await tab.goto(
-                "https://en.wikipedia.org/wiki/Web_scraping",
+                "https://qscrape.dev/l2/news",
                 timeout=30.0,
             )
             print(f"Wait event: {event}")
@@ -56,9 +57,9 @@ async def main() -> None:
             print(f"HTML: {len(html):,} chars")
 
             # ── DOM queries ──────────────────────────────────────────
-            headings = await tab.query_selector_all("#toc li a")
-            print(f"Table of contents entries: {len(headings)}")
-            for h in headings[:5]:
+            headlines = await tab.query_selector_all(".hn-feed-headline")
+            print(f"Article headlines found: {len(headlines)}")
+            for h in headlines[:5]:
                 print(f"  - {h}")
 
             # ── Screenshot ───────────────────────────────────────────
@@ -70,8 +71,10 @@ async def main() -> None:
             print(f"Screenshot: {len(png_bytes):,} bytes -> {path}")
 
             # ── JavaScript evaluation ────────────────────────────────
-            link_count = await tab.evaluate_js('document.querySelectorAll("a").length')
-            print(f"Links on page: {link_count}")
+            article_count = await tab.evaluate_js(
+                "document.querySelectorAll('.hn-feed-item').length"
+            )
+            print(f"Article cards in DOM: {article_count}")
 
         # ── Parallel fetch ───────────────────────────────────────────
         print("\nParallel fetch (watch both tabs in VNC!)...")
@@ -84,8 +87,8 @@ async def main() -> None:
                 return t or "(no title)", length
 
         results = await asyncio.gather(
-            fetch("https://en.wikipedia.org/wiki/Web_scraping"),
-            fetch("https://en.wikipedia.org/wiki/Rust_(programming_language)"),
+            fetch("https://qscrape.dev/l2/eshop"),
+            fetch("https://qscrape.dev/l2/scoretap"),
         )
         for title, length in results:
             print(f"  {title}: {length:,} chars")

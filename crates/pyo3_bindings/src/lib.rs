@@ -13,16 +13,16 @@ use pyo3::{
 };
 use pyo3_async_runtimes::tokio::future_into_py;
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task::JoinHandle};
 use void_crawl_core::{
     BrowserMode, BrowserPool, BrowserSession, DispatchKeyEventType, DispatchMouseEventType,
-    MouseButton, Page, PoolConfig, PooledTab, StealthConfig, YosoiError,
+    MouseButton, Page, PageResponse, PoolConfig, PooledTab, StealthConfig, VoidCrawlError,
 };
 
 // ── Error conversion ────────────────────────────────────────────────────
 
 #[allow(clippy::needless_pass_by_value)] // used as fn pointer in map_err(to_py_err)
-fn to_py_err(e: YosoiError) -> PyErr {
+fn to_py_err(e: VoidCrawlError) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
@@ -82,6 +82,53 @@ fn json_to_py(py: Python<'_>, val: Value) -> PyResult<Bound<'_, PyAny>> {
                 dict.set_item(k, json_to_py(py, v)?)?;
             }
             Ok(dict.into_any())
+        }
+    }
+}
+
+// ── PageResponse ────────────────────────────────────────────────────────
+
+/// Python-visible result of `Page.goto()` / `PooledTab.goto()`.
+///
+/// Attributes:
+///     html (str): Full outer HTML after network idle.
+///     url (str): Final URL after any redirects.
+///     status_code (int | None): HTTP status of the last response, or
+///         ``None`` when served from cache / service worker.
+///     redirected (bool): ``True`` when at least one HTTP redirect occurred.
+#[pyclass(name = "PageResponse")]
+#[derive(Debug)]
+pub struct PyPageResponse {
+    #[pyo3(get)]
+    pub html:        String,
+    #[pyo3(get)]
+    pub url:         String,
+    #[pyo3(get)]
+    pub status_code: Option<u16>,
+    #[pyo3(get)]
+    pub redirected:  bool,
+}
+
+#[pymethods]
+impl PyPageResponse {
+    fn __repr__(&self) -> String {
+        format!(
+            "PageResponse(url={:?}, status_code={:?}, redirected={}, html_len={})",
+            self.url,
+            self.status_code,
+            self.redirected,
+            self.html.len(),
+        )
+    }
+}
+
+impl From<PageResponse> for PyPageResponse {
+    fn from(r: PageResponse) -> Self {
+        Self {
+            html:        r.html,
+            url:         r.url,
+            status_code: r.status_code,
+            redirected:  r.redirected,
         }
     }
 }
@@ -225,11 +272,14 @@ impl PyPage {
         with_page!(self, py, |page| page.navigate(&url))
     }
 
-    /// Navigate and wait for network idle in one operation.
+    /// Navigate and wait for network idle, returning a :class:`PageResponse`.
     ///
     /// Faster than calling `navigate()` then `wait_for_network_idle()`
     /// separately because the event listener is set up before navigation
     /// starts, so early networkIdle events are never missed.
+    ///
+    /// Returns:
+    ///     PageResponse: HTML, final URL, HTTP status code, and redirect flag.
     #[pyo3(signature = (url, timeout=30.0))]
     fn goto<'py>(&self, py: Python<'py>, url: String, timeout: f64) -> PyResult<Bound<'py, PyAny>> {
         let inner = Arc::clone(&self.inner);
@@ -242,6 +292,7 @@ impl PyPage {
             let result = page
                 .goto_and_wait_for_idle(&url, Duration::from_secs_f64(timeout))
                 .await
+                .map(PyPageResponse::from)
                 .map_err(to_py_err);
             inner.lock().await.replace(page);
             result
@@ -364,6 +415,7 @@ impl PyPage {
     /// Returns True if stabilised within timeout, False otherwise.
     /// Prevents redirect gates / loading stubs from being treated as content.
     #[pyo3(signature = (timeout=10.0, min_length=5000, stable_checks=5))]
+    #[allow(deprecated)]
     fn wait_for_stable_dom<'py>(
         &self,
         py: Python<'py>,
@@ -602,14 +654,16 @@ impl PyBrowserSession {
     fn new_page<'py>(&self, py: Python<'py>, url: String) -> PyResult<Bound<'py, PyAny>> {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
-            let guard = inner.lock().await;
-            let session = guard.as_ref().ok_or_else(|| {
+            // Take session out — µs lock hold — to avoid holding the Mutex
+            // across the multi-second CDP tab-open + navigate operation.
+            let session = inner.lock().await.take().ok_or_else(|| {
                 PyRuntimeError::new_err(
                     "browser not launched — use `async with` or call launch() first",
                 )
             })?;
-            let page = session.new_page(&url).await.map_err(to_py_err)?;
-            Ok(PyPage::new(page))
+            let page_result = session.new_page(&url).await.map_err(to_py_err);
+            inner.lock().await.replace(session);
+            Ok(PyPage::new(page_result?))
         })
     }
 
@@ -617,10 +671,14 @@ impl PyBrowserSession {
     fn version<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
-            let guard = inner.lock().await;
-            let session =
-                guard.as_ref().ok_or_else(|| PyRuntimeError::new_err("browser not launched"))?;
-            session.version().await.map_err(to_py_err)
+            let session = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("browser not launched"))?;
+            let result = session.version().await.map_err(to_py_err);
+            inner.lock().await.replace(session);
+            result
         })
     }
 
@@ -762,6 +820,7 @@ impl PyPooledTab {
                 .page
                 .goto_and_wait_for_idle(&url, Duration::from_secs_f64(timeout))
                 .await
+                .map(PyPageResponse::from)
                 .map_err(to_py_err);
             inner.lock().await.replace(tab);
             result
@@ -853,6 +912,7 @@ impl PyPooledTab {
     ///
     /// Returns True if stabilised within timeout, False otherwise.
     #[pyo3(signature = (timeout=10.0, min_length=5000, stable_checks=5))]
+    #[allow(deprecated)]
     fn wait_for_stable_dom<'py>(
         &self,
         py: Python<'py>,
@@ -1038,7 +1098,7 @@ impl PyAcquireContext {
         let tab_slot = Arc::clone(&self.tab_slot);
         future_into_py(py, async move {
             if let Some(tab) = tab_slot.lock().await.take() {
-                let _ = pool.release(tab).await;
+                pool.release(tab).await;
             }
             Ok(false)
         })
@@ -1060,6 +1120,7 @@ impl PyAcquireContext {
 #[pyclass(name = "_PoolContext")]
 pub struct PyPoolContext {
     pool_slot: Arc<Mutex<Option<Arc<BrowserPool>>>>,
+    task_slot: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl fmt::Debug for PyPoolContext {
@@ -1072,8 +1133,12 @@ impl fmt::Debug for PyPoolContext {
 impl PyPoolContext {
     fn __aenter__<'py>(slf: &Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pool_slot = Arc::clone(&slf.borrow().pool_slot);
+        let task_slot = Arc::clone(&slf.borrow().task_slot);
         future_into_py(py, async move {
             let pool = Arc::new(BrowserPool::from_env().await.map_err(to_py_err)?);
+            if pool.config().auto_evict {
+                *task_slot.lock().await = Some(Arc::clone(&pool).spawn_eviction_task());
+            }
             *pool_slot.lock().await = Some(Arc::clone(&pool));
             Ok(PyBrowserPool { inner: pool })
         })
@@ -1088,7 +1153,11 @@ impl PyPoolContext {
         _exc_tb: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let pool_slot = Arc::clone(&self.pool_slot);
+        let task_slot = Arc::clone(&self.task_slot);
         future_into_py(py, async move {
+            if let Some(task) = task_slot.lock().await.take() {
+                task.abort();
+            }
             if let Some(pool) = pool_slot.lock().await.take() {
                 let _ = pool.close().await;
             }
@@ -1130,7 +1199,10 @@ impl PyBrowserPool {
     ///         ...
     #[classmethod]
     fn from_env(_cls: &Bound<'_, PyType>) -> PyPoolContext {
-        PyPoolContext { pool_slot: Arc::new(Mutex::new(None)) }
+        PyPoolContext {
+            pool_slot: Arc::new(Mutex::new(None)),
+            task_slot: Arc::new(Mutex::new(None)),
+        }
     }
 
     /// Pre-open tabs across all sessions.
@@ -1153,7 +1225,7 @@ impl PyBrowserPool {
     /// public Python API.
     #[classmethod]
     #[pyo3(signature = (
-        browsers, tabs_per_browser, tab_max_uses, tab_max_idle_secs,
+        browsers, tabs_per_browser, tab_max_uses, tab_max_idle_secs, auto_evict,
         headless, no_sandbox, stealth, ws_urls, proxy, chrome_executable, extra_args
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -1163,6 +1235,7 @@ impl PyBrowserPool {
         tabs_per_browser: usize,
         tab_max_uses: u32,
         tab_max_idle_secs: u64,
+        auto_evict: bool,
         headless: bool,
         no_sandbox: bool,
         stealth: bool,
@@ -1176,6 +1249,7 @@ impl PyBrowserPool {
             tabs_per_browser,
             tab_max_uses,
             tab_max_idle_secs,
+            auto_evict,
             headless,
             no_sandbox,
             stealth,
@@ -1184,6 +1258,7 @@ impl PyBrowserPool {
             chrome_executable,
             extra_args,
             pool_slot: Arc::new(Mutex::new(None)),
+            task_slot: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1198,7 +1273,7 @@ impl PyBrowserPool {
         future_into_py(py, async move {
             let mut guard = tab_inner.lock().await;
             if let Some(pooled_tab) = guard.take() {
-                pool.release(pooled_tab).await.map_err(to_py_err)?;
+                pool.release(pooled_tab).await;
             }
             Ok(())
         })
@@ -1246,6 +1321,7 @@ pub struct PyPoolParamsContext {
     tabs_per_browser:  usize,
     tab_max_uses:      u32,
     tab_max_idle_secs: u64,
+    auto_evict:        bool,
     headless:          bool,
     no_sandbox:        bool,
     stealth:           bool,
@@ -1254,6 +1330,7 @@ pub struct PyPoolParamsContext {
     chrome_executable: Option<String>,
     extra_args:        Vec<String>,
     pool_slot:         Arc<Mutex<Option<Arc<BrowserPool>>>>,
+    task_slot:         Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl fmt::Debug for PyPoolParamsContext {
@@ -1270,6 +1347,7 @@ impl PyPoolParamsContext {
         let tabs_per_browser = this.tabs_per_browser;
         let tab_max_uses = this.tab_max_uses;
         let tab_max_idle_secs = this.tab_max_idle_secs;
+        let auto_evict = this.auto_evict;
         let headless = this.headless;
         let no_sandbox = this.no_sandbox;
         let stealth_enabled = this.stealth;
@@ -1278,6 +1356,7 @@ impl PyPoolParamsContext {
         let chrome_executable = this.chrome_executable.clone();
         let extra_args = this.extra_args.clone();
         let pool_slot = Arc::clone(&this.pool_slot);
+        let task_slot = Arc::clone(&this.task_slot);
         drop(this);
 
         future_into_py(py, async move {
@@ -1335,8 +1414,12 @@ impl PyPoolParamsContext {
                 tabs_per_browser,
                 tab_max_uses,
                 tab_max_idle_secs,
+                auto_evict,
             };
             let pool = Arc::new(BrowserPool::new(config, sessions));
+            if auto_evict {
+                *task_slot.lock().await = Some(Arc::clone(&pool).spawn_eviction_task());
+            }
             *pool_slot.lock().await = Some(Arc::clone(&pool));
             Ok(PyBrowserPool { inner: pool })
         })
@@ -1351,7 +1434,11 @@ impl PyPoolParamsContext {
         _exc_tb: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let pool_slot = Arc::clone(&self.pool_slot);
+        let task_slot = Arc::clone(&self.task_slot);
         future_into_py(py, async move {
+            if let Some(task) = task_slot.lock().await.take() {
+                task.abort();
+            }
             if let Some(pool) = pool_slot.lock().await.take() {
                 let _ = pool.close().await;
             }
@@ -1371,5 +1458,6 @@ fn _ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyAcquireContext>()?;
     m.add_class::<PyPoolContext>()?;
     m.add_class::<PyPoolParamsContext>()?;
+    m.add_class::<PyPageResponse>()?;
     Ok(())
 }

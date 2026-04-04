@@ -1,43 +1,44 @@
-"""Query DOM elements, click buttons, and type into inputs."""
+"""Query DOM elements, type into search inputs, and click buttons.
+
+Uses qscrape.dev/l2/taxes (Eldoria Registry of Deeds) — a JS-rendered
+property-search form that only exists in the DOM after hydration.
+"""
 
 import asyncio
 
 from voidcrawl import BrowserConfig, BrowserSession
 
-FORM_PAGE = """data:text/html,
-<html>
-<body>
-  <h1 id="greeting">Hello</h1>
-  <input id="name" type="text" placeholder="Your name" />
-  <button id="btn" onclick="
-    document.getElementById('greeting').textContent =
-      'Hello, ' + document.getElementById('name').value + '!';
-  ">Greet</button>
-</body>
-</html>
-"""
+TARGET_URL = "https://qscrape.dev/l2/taxes"
 
 
 async def main() -> None:
-    """Query DOM elements, type into an input, and click a button."""
+    """Search the Eldoria Registry: type a name, click search, read results."""
     async with BrowserSession(BrowserConfig()) as browser:
-        page = await browser.new_page(FORM_PAGE)
+        page = await browser.new_page(TARGET_URL)
+        # Wait for Astro client:only islands to hydrate before touching the DOM.
+        await page.wait_for_network_idle()
 
-        # Query a single element (returns inner HTML or None)
-        heading = await page.query_selector("#greeting")
-        print(f"Heading HTML: {heading}")
+        # Query all search inputs (returns inner-HTML strings or None per element)
+        inputs = await page.query_selector_all(".er-input")
+        print(f"Search fields available: {len(inputs)}")
 
-        # Query multiple elements
-        all_inputs = await page.query_selector_all("input")
-        print(f"Found {len(all_inputs)} input(s)")
+        # Type a search term into the first input field
+        await page.type_into(".er-input", "Smith")
 
-        # Type into the input and click the button
-        await page.type_into("#name", "World")
-        await page.click_element("#btn")
+        # Click the primary search / submit button via JS (avoids CDP viewport
+        # requirement that page.click_element() uses under the hood).
+        await page.evaluate_js("document.querySelector('.er-btn-primary').click()")
 
-        # Check the updated heading
-        updated = await page.query_selector("#greeting")
-        print(f"Updated heading: {updated}")
+        # Results may load via a client-side fetch — wait again.
+        await page.wait_for_network_idle()
+
+        # Query result rows
+        rows = await page.query_selector_all(".er-row")
+        print(f"Result rows after search: {len(rows)}")
+
+        # Peek at the first result row's inner HTML
+        first = await page.query_selector(".er-row")
+        print(f"First row: {(first or '').strip()[:120]}")
 
         # Missing selectors return None
         missing = await page.query_selector("#does-not-exist")

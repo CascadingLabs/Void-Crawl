@@ -6,12 +6,12 @@ from typing import Generic, TypeVar, overload
 
 from voidcrawl.actions._base import JsActionNode
 from voidcrawl.actions._protocol import JsTab
-from voidcrawl.contracts import Contract
+from voidcrawl.contracts import Schema
 
 __all__ = ["GetAttribute", "GetText", "QueryAll", "SetAttribute"]
 
 _T = TypeVar("_T")
-_C = TypeVar("_C", bound=Contract)
+_C = TypeVar("_C", bound=Schema)
 
 class GetAttribute(JsActionNode):
     """Read an HTML attribute from the first matching element.
@@ -39,13 +39,13 @@ class GetText(JsActionNode):
 class QueryAll(JsActionNode, Generic[_T]):
     """Query all elements matching *selector* and extract fields from each.
 
-    Pass a :class:`~voidcrawl.contracts.Contract` subclass as *fields* to
+    Pass a :class:`~voidcrawl.contracts.Schema` subclass as *fields* to
     receive typed model instances, or a plain dict mapping for raw results.
 
-    Example — typed Contract::
+    Example — typed Schema::
 
-        class Article(vc.Contract):
-            title: str = vc.Selector("h2")
+        class Article(vc.Schema):
+            title: str = vc.Text("h2")
             url: str | None = vc.Attr("a", "href")
 
         articles = await QueryAll(".article", Article).run(page)

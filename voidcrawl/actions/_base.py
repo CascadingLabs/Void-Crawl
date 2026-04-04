@@ -80,13 +80,12 @@ def inline_js(code: str) -> JsSource:
     return JsSource(code)
 
 
-def _build_expression(js_source: JsSource, params: dict[str, Any]) -> str:
+def _build_expression(js_source: JsSource, params_json: str) -> str:
     """Build a full JS expression with a ``__params`` preamble.
 
     Wraps in an async IIFE so ``const`` declarations don't leak and
     ``await`` can be used inside the snippet.
     """
-    params_json = json.dumps(params, default=str)
     return f"(async () => {{ const __params = {params_json}; {js_source.js} }})()"
 
 
@@ -164,7 +163,14 @@ class JsActionNode(ActionNode):
         Returns:
             The JSON-deserialised return value from the snippet.
         """
-        expression = _build_expression(self.js, self.params())
+        try:
+            params_json = json.dumps(self.params())
+        except TypeError as exc:
+            raise TypeError(
+                f"{type(self).__name__} params are not JSON-serialisable: {exc}. "
+                "Override params() to filter or transform non-serialisable values."
+            ) from exc
+        expression = _build_expression(self.js, params_json)
         return await tab.evaluate_js(expression)
 
     def __repr__(self) -> str:

@@ -34,10 +34,15 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-import click
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
+try:
+    import click
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except ImportError as _err:
+    raise ImportError(
+        "voidcrawl.debug requires the 'debug' extra: uv add 'voidcrawl[debug]'"
+    ) from _err
 
 from voidcrawl.actions._flow import FlowResult
 
@@ -142,6 +147,9 @@ class DebugSession:
             mode (ignored when paused at a prompt). Defaults to ``0.3``.
         highlight: Flash a CSS outline on selector-targeted elements
             before executing the action. Defaults to ``True``.
+        nav_settle_secs: Seconds to wait after triggering a rewind
+            navigation before replaying actions.  Increase if pages
+            are slow to load. Defaults to ``0.5``.
 
     Example:
         >>> dbg = DebugSession(page, start_url="https://example.com")
@@ -158,12 +166,14 @@ class DebugSession:
         stepping: bool = True,
         step_delay: float = 0.3,
         highlight: bool = True,
+        nav_settle_secs: float = 0.5,
     ) -> None:
         self._tab = tab
         self._start_url = start_url
         self._stepping = stepping
         self._step_delay = step_delay
         self._highlight = highlight
+        self._nav_settle_secs = nav_settle_secs
 
         self._queue: list[ActionNode] = []
         self._history: list[_HistoryEntry] = []
@@ -192,7 +202,7 @@ class DebugSession:
         Returns:
             This session, for chaining.
         """
-        self._queue.extend(flow._actions)
+        self._queue.extend(flow)
         return self
 
     # ── Execution ────────────────────────────────────────────────────
@@ -261,13 +271,13 @@ class DebugSession:
         if selector:
             await _highlight(self._tab, selector)
 
-        tag = f"[{self._pos + 1}/{len(self._queue)}]"
-        _console.print(f"  [bold green]\u25b6[/] {tag} [cyan]{action!r}[/]")
+        tag = f"[dim]{self._pos + 1}/{len(self._queue)}[/]"
+        _console.print(f"[bold green]\u25b6[/]  {tag}  [cyan]{action!r}[/]")
 
         result = await action.run(self._tab)
 
         if result is not None:
-            _console.print(f"    [dim]\u2192[/] [yellow]{result!r}[/]")
+            _console.print(f"   [dim]\u2192[/] [yellow]{result!r}[/]")
 
         self._history.append(_HistoryEntry(action, result))
         return result
@@ -276,44 +286,38 @@ class DebugSession:
         """Re-navigate and replay actions 0..target-1, setting _pos to target."""
         if self._start_url is None:
             _console.print(
-                "    [bold red]\u2717[/] Cannot rewind: no start_url provided"
+                "   [bold red]\u2717[/] Cannot rewind: no start_url provided"
             )
             return
         target = max(target, 0)
 
         _console.print(
-            f"    [bold magenta]\u21ba[/] Rewinding to step [bold]{target + 1}[/]..."
+            f"\n[bold magenta]\u21ba[/]  Rewinding to step [bold]{target + 1}[/]  "
+            f"[dim](replaying {target} action{'s' if target != 1 else ''})[/]"
         )
         await self._tab.evaluate_js(f"window.location.href = {self._start_url!r}")
-        # Brief wait for navigation
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(self._nav_settle_secs)
 
         self._history.clear()
         for i in range(target):
             action = self._queue[i]
-            _console.print(
-                f"    [dim]\u23e9[/] replaying [{i + 1}/{len(self._queue)}] "
-                f"[cyan]{action!r}[/]"
-            )
             result = await action.run(self._tab)
             self._history.append(_HistoryEntry(action, result))
 
         self._pos = target
         self._stepping = True
-        _console.print(
-            f"    [bold green]\u2714[/] Rewound to step [bold]{target + 1}[/]"
-        )
+        _console.print(f"   [bold green]\u2714[/] Ready at step [bold]{target + 1}[/]")
 
     async def _prompt(self, action: ActionNode, is_bp: bool) -> str:
         """Show the interactive prompt and return the command character."""
         bp_tag = " [bold red]\u25cf BP[/]" if is_bp else ""
-        tag = f"[{self._pos + 1}/{len(self._queue)}]"
-        _console.print(f"\n  [bold yellow]\u23f8[/] {tag}{bp_tag} [cyan]{action!r}[/]")
+        tag = f"[dim]{self._pos + 1}/{len(self._queue)}[/]"
+        _console.print(f"\n[bold yellow]\u23f8[/]  {tag}{bp_tag}  [cyan]{action!r}[/]")
 
         prompt_text = (
-            "    [bold][n][/]ext  [bold][c][/]ontinue  "
-            "[bold][b][/]ack  [bold][r][/]estart  "
-            "[bold][l][/]ist  [bold][h][/]istory  [bold][q][/]uit > "
+            "   [bold]n[/] next  [bold]c[/] cont  [bold]b[/] back"
+            "  [bold]r[/] restart  [bold]l[/] list  [bold]h[/] hist"
+            "  [bold]q[/] quit \u203a "
         )
         ch = await _async_key(prompt_text)
         cmd = ch.strip().lower()
@@ -321,22 +325,37 @@ class DebugSession:
             return "n"
         if cmd in ("c", "b", "r", "l", "h", "q"):
             return cmd
-        _console.print(f"    [dim]Unknown key:[/] [red]{cmd!r}[/]")
+        _console.print(f"   [dim]Unknown key:[/] [red]{cmd!r}[/]")
         return await self._prompt(action, is_bp)
 
     def _print_banner(self) -> None:
         mode = "stepping" if self._stepping else "breakpoints only"
-        subtitle = (
-            "[dim]n[/]=next  [dim]c[/]=continue  [dim]b[/]=back  "
-            "[dim]r[/]=restart  [dim]l[/]=list  [dim]h[/]=history  [dim]q[/]=quit"
+        keys = Table.grid(padding=(0, 3))
+        keys.add_column()
+        keys.add_column()
+        keys.add_column()
+        keys.add_column()
+        keys.add_row(
+            "[bold]n[/] next",
+            "[bold]c[/] continue",
+            "[bold]b[/] back",
+            "[bold]r[/] restart",
+        )
+        keys.add_row(
+            "[bold]l[/] list",
+            "[bold]h[/] history",
+            "[bold]q[/] quit",
+            "",
+        )
+        title = (
+            f"[bold]VoidCrawl Debugger[/]  "
+            f"[cyan]{len(self._queue)}[/] actions  [dim]({mode})[/]"
         )
         banner = Panel(
-            subtitle,
-            title=f"[bold]VoidCrawl Debugger[/] \u2014 "
-            f"[cyan]{len(self._queue)}[/] actions queued "
-            f"[dim]({mode})[/]",
+            keys,
+            title=title,
             border_style="blue",
-            padding=(0, 1),
+            padding=(0, 2),
         )
         _console.print(banner)
 
@@ -360,22 +379,25 @@ class DebugSession:
             padding=(0, 1),
         )
         table.add_column("#", justify="right", style="dim", width=4)
-        table.add_column("", width=3)
+        table.add_column("State", width=7)
         table.add_column("Action")
         table.add_column("BP", justify="center", width=4)
 
         for i, action in enumerate(self._queue):
-            pos_marker = "[bold green]\u25b6[/]" if i == self._pos else " "
-            done_marker = "[green]\u2714[/]" if i < len(self._history) else " "
+            if i < len(self._history):
+                state = "[green]\u2714 done[/]"
+            elif i == self._pos:
+                state = "[bold yellow]\u25b6 here[/]"
+            else:
+                state = "[dim]\u00b7 wait[/]"
             bp_marker = "[bold red]\u25cf[/]" if _is_breakpoint(action) else ""
-            status = f"{done_marker} {pos_marker}"
-            table.add_row(str(i + 1), status, f"[cyan]{action!r}[/]", bp_marker)
+            table.add_row(str(i + 1), state, f"[cyan]{action!r}[/]", bp_marker)
 
         _console.print(table)
 
     def _print_history(self) -> None:
         if not self._history:
-            _console.print("    [dim](no actions executed yet)[/]")
+            _console.print("   [dim](no actions executed yet)[/]")
             return
 
         table = Table(

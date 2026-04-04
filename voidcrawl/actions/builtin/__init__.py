@@ -42,23 +42,17 @@ __all__ = [
     "CdpScrollUp",
     "CdpTypeText",
     "ClearInput",
-    # click
     "ClickAt",
     "ClickElement",
-    # dom
     "GetAttribute",
     "GetText",
-    "QueryAll",
-    # hover
     "Hover",
+    "QueryAll",
     "ScrollBy",
-    # scroll
     "ScrollTo",
     "SelectOption",
     "SetAttribute",
-    # input
     "SetInputValue",
-    # wait
     "WaitForSelector",
     "WaitForTimeout",
 ]

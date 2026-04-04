@@ -12,8 +12,8 @@ pub mod stealth;
 pub use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, MouseButton,
 };
-pub use error::{Result, YosoiError};
-pub use page::Page;
+pub use error::{Result, VoidCrawlError};
+pub use page::{Page, PageResponse};
 pub use pool::{BrowserPool, PoolConfig, PooledTab};
 pub use session::{BrowserMode, BrowserSession, BrowserSessionBuilder};
 pub use stealth::StealthConfig;

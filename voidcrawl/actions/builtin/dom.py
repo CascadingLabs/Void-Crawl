@@ -9,13 +9,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast, overload
 
 from voidcrawl.actions._base import JsActionNode, inline_js
-from voidcrawl.contracts import Contract
+from voidcrawl.contracts import Schema
 
 if TYPE_CHECKING:
     from voidcrawl.actions._protocol import JsTab
 
 _T = TypeVar("_T")
-_C = TypeVar("_C", bound="Contract")
+_C = TypeVar("_C", bound="Schema")
 
 
 class GetAttribute(JsActionNode):
@@ -53,7 +53,7 @@ class GetText(JsActionNode):
     js = inline_js("""\
 const el = document.querySelector(__params.selector);
 if (!el) return null;
-return el.textContent;
+return (el.textContent ?? '').trim() || null;
 """)
 
     def __init__(self, selector: str) -> None:
@@ -73,14 +73,14 @@ class QueryAll(JsActionNode, Generic[_T]):
     Pass an empty string ``""`` as the sub-selector to target the root
     element itself rather than a descendant.
 
-    Pass a :class:`~voidcrawl.contracts.Contract` subclass as *fields*
+    Pass a :class:`~voidcrawl.contracts.Schema` subclass as *fields*
     to receive typed model instances instead of raw dicts.
 
     Args:
         selector: CSS selector for the root elements to iterate over.
         fields: Mapping of result key → sub-selector or
             ``(sub_selector, attribute)`` tuple, **or** a
-            :class:`~voidcrawl.contracts.Contract` subclass whose field
+            :class:`~voidcrawl.contracts.Schema` subclass whose field
             declarations are used automatically.
 
     Example — raw dicts::
@@ -90,10 +90,10 @@ class QueryAll(JsActionNode, Generic[_T]):
             {"title": "h2", "url": ("a", "href"), "date": ".byline"},
         )
 
-    Example — typed Contract::
+    Example — typed Schema::
 
-        class Article(vc.Contract):
-            title: str = vc.Selector("h2")
+        class Article(vc.Schema):
+            title: str = vc.Text("h2")
             url: str | None = vc.Attr("a", "href")
 
 
@@ -134,20 +134,23 @@ return items.map(item => {
     def __init__(
         self,
         selector: str,
-        fields: dict[str, str | tuple[str, str]] | type[Contract],
+        fields: dict[str, str | tuple[str, str]] | type[Schema],
     ) -> None:
         self.selector = selector
-        if isinstance(fields, type) and issubclass(fields, Contract):
-            self._contract_cls: type[Contract] | None = fields
-            self.fields = fields._vd_fields_spec()
+        if isinstance(fields, type) and issubclass(fields, Schema):
+            self._schema_cls: type[Schema] | None = fields
+            self.fields = fields._vc_fields_spec()
         else:
-            self._contract_cls = None
+            self._schema_cls = None
             self.fields = fields
+
+    def params(self) -> dict[str, Any]:
+        return {"selector": self.selector, "fields": self.fields}
 
     async def run(self, tab: JsTab) -> list[_T]:
         raw: list[dict[str, str | None]] = await super().run(tab)  # type: ignore[assignment]
-        if self._contract_cls is not None:
-            return cast("list[_T]", [self._contract_cls(**row) for row in raw])
+        if self._schema_cls is not None:
+            return cast("list[_T]", [self._schema_cls(**row) for row in raw])
         return cast("list[_T]", raw)
 
 

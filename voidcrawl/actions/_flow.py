@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from voidcrawl.actions._base import ActionNode
     from voidcrawl.actions._protocol import Tab
 
@@ -81,6 +83,9 @@ class Flow:
 
     def __len__(self) -> int:
         return len(self._actions)
+
+    def __iter__(self) -> Iterator[ActionNode]:
+        return iter(self._actions)
 
     async def run(self, tab: Tab) -> FlowResult:
         """Execute all actions sequentially against *tab*.

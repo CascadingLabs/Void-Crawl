@@ -19,20 +19,26 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
- "click>=8.3.2",
- "httpx>=0.28.1",
- "pydantic>=2",
- "rich>=14.3.3",
+  "pydantic>=2",
+]
+
+[project.optional-dependencies]
+debug = [
+  "click>=8.3.2",
+  "rich>=14.3.3",
 ]
 
 [dependency-groups]
 dev = [
+  "click>=8.3.2",
   "commitizen>=4.13",
+  "httpx>=0.28.1",
   "mypy>=1.15",
   "pytest>=9",
   "pytest-asyncio>=1",
   "griffe>=2",
   "poethepoet>=0.42",
+  "rich>=14.3.3",
   "ruff>=0.9",
 ]
 

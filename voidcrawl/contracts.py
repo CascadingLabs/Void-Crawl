@@ -1,6 +1,6 @@
 """Declarative scrape result models backed by Pydantic.
 
-Define a :class:`Contract` subclass with :func:`Selector` and :func:`Attr`
+Define a :class:`Schema` subclass with :func:`Text` and :func:`Attr`
 field declarations, then pass the class to
 :class:`~voidcrawl.actions.QueryAll` to get back typed model instances
 instead of raw dicts.
@@ -14,10 +14,10 @@ Example::
     from voidcrawl.actions import QueryAll
 
 
-    class Article(vc.Contract):
-        headline: str = vc.Selector("h2")
+    class Article(vc.Schema):
+        headline: str = vc.Text("h2")
         url: str | None = vc.Attr("a", "href", sanitize=vc.safe_url)
-        date: str | None = vc.Selector(".byline", sanitize=vc.strip_tags)
+        date: str | None = vc.Text(".byline", sanitize=vc.strip_tags)
 
 
     articles = await QueryAll(".article", Article).run(page)
@@ -108,7 +108,7 @@ def strip_tags(value: str | None) -> str | None:
 # ── Field constructors ───────────────────────────────────────────────────
 
 
-def Selector(  # noqa: N802
+def Text(  # noqa: N802
     css: str,
     *,
     sanitize: Callable[[str | None], str | None] | None = None,
@@ -135,8 +135,8 @@ def Selector(  # noqa: N802
         A Pydantic ``FieldInfo`` carrying the selector and sanitizer
         metadata.
     """
-    _validate_css(css, "Selector")
-    fi = FieldInfo(default=None, json_schema_extra={"_vd_selector": css})
+    _validate_css(css, "Text")
+    fi = FieldInfo(default=None, json_schema_extra={"_vc_selector": css})
     if sanitize:
         fi.metadata.append(_SanitizeMeta(sanitize))
     return fi
@@ -166,36 +166,36 @@ def Attr(  # noqa: N802
         sanitizer metadata.
     """
     _validate_css(css, "Attr")
-    fi = FieldInfo(default=None, json_schema_extra={"_vd_attr": [css, attr]})
+    fi = FieldInfo(default=None, json_schema_extra={"_vc_attr": [css, attr]})
     if sanitize:
         fi.metadata.append(_SanitizeMeta(sanitize))
     return fi
 
 
-# ── Contract base class ──────────────────────────────────────────────────
+# ── Schema base class ────────────────────────────────────────────────────
 
 
-class Contract(BaseModel):
-    """Base class for declarative scrape result models.
+class Schema(BaseModel):
+    """Base class for declarative DOM extraction models.
 
-    Subclass this and annotate fields with :func:`Selector` or
-    :func:`Attr` to declare how each field is extracted from the DOM.
-    Pass the subclass to :class:`~voidcrawl.actions.QueryAll` to
-    receive typed instances instead of raw dicts.
+    Subclass this and annotate fields with :func:`Text` or :func:`Attr`
+    to declare how each field is extracted from the DOM.  Pass the
+    subclass to :class:`~voidcrawl.actions.QueryAll` to receive typed
+    instances instead of raw dicts.
 
     Example::
 
-        class Article(Contract):
-            headline: str = Selector("h2")
+        class Article(Schema):
+            headline: str = Text("h2")
             url: str | None = Attr("a", "href", sanitize=safe_url)
-            excerpt: str | None = Selector(".summary", sanitize=strip_tags)
+            excerpt: str | None = Text(".summary", sanitize=strip_tags)
     """
 
     @classmethod
-    def _vd_fields_spec(cls) -> dict[str, str | tuple[str, str]]:
+    def _vc_fields_spec(cls) -> dict[str, str | tuple[str, str]]:
         """Build the ``fields`` dict expected by :class:`~voidcrawl.actions.QueryAll`.
 
-        Introspects Pydantic ``model_fields`` for :func:`Selector` /
+        Introspects Pydantic ``model_fields`` for :func:`Text` /
         :func:`Attr` metadata and returns a mapping of field name →
         sub-selector string or ``(sub_selector, attr)`` tuple.
 
@@ -206,15 +206,15 @@ class Contract(BaseModel):
         spec: dict[str, str | tuple[str, str]] = {}
         for name, fi in cls.model_fields.items():
             extra: dict[str, Any] = fi.json_schema_extra or {}  # type: ignore[assignment]
-            if "_vd_selector" in extra:
-                spec[name] = extra["_vd_selector"]
-            elif "_vd_attr" in extra:
-                spec[name] = (extra["_vd_attr"][0], extra["_vd_attr"][1])
+            if "_vc_selector" in extra:
+                spec[name] = extra["_vc_selector"]
+            elif "_vc_attr" in extra:
+                spec[name] = (extra["_vc_attr"][0], extra["_vc_attr"][1])
         return spec
 
     @model_validator(mode="before")
     @classmethod
-    def _vd_sanitize(cls, data: Any) -> Any:
+    def _vc_sanitize(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
         out = dict(data)

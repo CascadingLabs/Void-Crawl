@@ -1,22 +1,27 @@
-"""Evaluate arbitrary JavaScript in the page context."""
+"""Evaluate arbitrary JavaScript in a JS-rendered page context."""
 
 import asyncio
 
 from voidcrawl import BrowserPool, PoolConfig
 
+TARGET_URL = "https://qscrape.dev/l2/scoretap"
+
 
 async def main() -> None:
-    """Evaluate various JavaScript expressions in a page context."""
+    """Evaluate various JavaScript expressions on ScoreTap after hydration."""
     async with BrowserPool(PoolConfig()) as pool, pool.acquire() as tab:
-        await tab.navigate("https://example.com")
+        # goto() waits for network idle so JS islands have fully hydrated.
+        await tab.goto(TARGET_URL)
 
         # evaluate_js returns native Python types
         user_agent = await tab.evaluate_js("navigator.userAgent")
         print(f"User agent: {user_agent}")
 
-        # Compute something in-page
-        p_count = await tab.evaluate_js("document.querySelectorAll('p').length")
-        print(f"Number of <p> tags: {p_count}")
+        # Count JS-rendered match rows (0 in raw HTML — only visible after hydration)
+        match_count = await tab.evaluate_js(
+            "document.querySelectorAll('.st-match-row').length"
+        )
+        print(f"Number of match rows: {match_count}")
 
         # Return structured data
         dims = await tab.evaluate_js("({w: window.innerWidth, h: window.innerHeight})")

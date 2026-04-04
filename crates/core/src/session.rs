@@ -10,7 +10,7 @@ use serde_json::Value;
 use tokio::{sync::Mutex, task::JoinHandle};
 
 use crate::{
-    error::{Result, YosoiError},
+    error::{Result, VoidCrawlError},
     page::Page,
     stealth::StealthConfig,
 };
@@ -141,9 +141,14 @@ impl BrowserSessionBuilder {
 ///
 /// Use [`BrowserSessionBuilder`] or the convenience constructors to create one.
 pub struct BrowserSession {
-    browser:       Arc<Mutex<Browser>>,
-    _handler_task: JoinHandle<()>,
-    stealth:       StealthConfig,
+    browser:        Arc<Mutex<Browser>>,
+    _handler_task:  JoinHandle<()>,
+    stealth:        StealthConfig,
+    /// Owns the temporary user data directory for launched browsers.
+    /// `None` for remote-debug sessions (no local user data dir).
+    /// Dropped after `browser` and `_handler_task`, so Chrome has already
+    /// been signalled to close before the directory is deleted.
+    _user_data_dir: Option<tempfile::TempDir>,
 }
 
 impl fmt::Debug for BrowserSession {
@@ -183,12 +188,14 @@ impl BrowserSession {
         no_sandbox: bool,
         window_size: Option<(u32, u32)>,
     ) -> Result<Self> {
+        let mut owned_user_data_dir: Option<tempfile::TempDir> = None;
+
         let (browser, handler) = match &mode {
             BrowserMode::RemoteDebug { ws_url } => {
                 let ws = resolve_ws_url(ws_url).await?;
                 Browser::connect(&ws)
                     .await
-                    .map_err(|e| YosoiError::ConnectionFailed(e.to_string()))?
+                    .map_err(|e| VoidCrawlError::ConnectionFailed(e.to_string()))?
             }
             BrowserMode::Headless | BrowserMode::Headful => {
                 // Disable chromiumoxide's DEFAULT_ARGS which include
@@ -198,9 +205,12 @@ impl BrowserSession {
 
                 // Each browser instance needs its own user data dir to avoid
                 // SingletonLock conflicts when launching multiple browsers.
+                // Store the TempDir in `owned_user_data_dir` so it is kept
+                // alive for the lifetime of `BrowserSession` and cleaned up
+                // automatically on drop (instead of leaking with `.keep()`).
                 let user_data_dir = tempfile::tempdir()
-                    .map_err(|e| YosoiError::LaunchFailed(format!("tmpdir: {e}")))?;
-                builder = builder.user_data_dir(user_data_dir.keep());
+                    .map_err(|e| VoidCrawlError::LaunchFailed(format!("tmpdir: {e}")))?;
+                builder = builder.user_data_dir(user_data_dir.path());
 
                 if matches!(mode, BrowserMode::Headful) {
                     builder = builder.with_head();
@@ -268,17 +278,26 @@ impl BrowserSession {
                     .arg("--disable-search-engine-choice-screen")
                     .arg("--homepage=about:blank");
 
-                let config = builder.build().map_err(YosoiError::LaunchFailed)?;
+                let config = builder.build().map_err(VoidCrawlError::LaunchFailed)?;
 
-                Browser::launch(config)
+                let result = Browser::launch(config)
                     .await
-                    .map_err(|e| YosoiError::LaunchFailed(e.to_string()))?
+                    .map_err(|e| VoidCrawlError::LaunchFailed(e.to_string()))?;
+                // Store only after a successful launch so a failed launch
+                // still drops (and cleans up) the TempDir here.
+                owned_user_data_dir = Some(user_data_dir);
+                result
             }
         };
 
         let handler_task = spawn_handler(handler);
 
-        Ok(Self { browser: Arc::new(Mutex::new(browser)), _handler_task: handler_task, stealth })
+        Ok(Self {
+            browser: Arc::new(Mutex::new(browser)),
+            _handler_task: handler_task,
+            stealth,
+            _user_data_dir: owned_user_data_dir,
+        })
     }
 
     /// Open a new tab, apply stealth settings, and navigate to `url`.
@@ -292,7 +311,7 @@ impl BrowserSession {
             let cdp_page = browser
                 .new_page("about:blank")
                 .await
-                .map_err(|e| YosoiError::PageError(e.to_string()))?;
+                .map_err(|e| VoidCrawlError::PageError(e.to_string()))?;
             Page::new(cdp_page)
         }; // browser lock released before navigation
 
@@ -308,7 +327,7 @@ impl BrowserSession {
             let cdp_page = browser
                 .new_page("about:blank")
                 .await
-                .map_err(|e| YosoiError::PageError(e.to_string()))?;
+                .map_err(|e| VoidCrawlError::PageError(e.to_string()))?;
             Page::new(cdp_page)
         };
         page.apply_stealth(&self.stealth).await?;
@@ -318,21 +337,22 @@ impl BrowserSession {
     /// List all open pages.
     pub async fn pages(&self) -> Result<Vec<Page>> {
         let browser = self.browser.lock().await;
-        let cdp_pages = browser.pages().await.map_err(|e| YosoiError::PageError(e.to_string()))?;
+        let cdp_pages =
+            browser.pages().await.map_err(|e| VoidCrawlError::PageError(e.to_string()))?;
         Ok(cdp_pages.into_iter().map(Page::new).collect())
     }
 
     /// Get browser version string.
     pub async fn version(&self) -> Result<String> {
         let browser = self.browser.lock().await;
-        let info = browser.version().await.map_err(|e| YosoiError::Other(e.to_string()))?;
+        let info = browser.version().await.map_err(|e| VoidCrawlError::Other(e.to_string()))?;
         Ok(info.product)
     }
 
     /// Gracefully close the browser.
     pub async fn close(&self) -> Result<()> {
         let mut browser = self.browser.lock().await;
-        browser.close().await.map_err(|e| YosoiError::Other(e.to_string()))?;
+        browser.close().await.map_err(|e| VoidCrawlError::Other(e.to_string()))?;
         Ok(())
     }
 
@@ -364,14 +384,14 @@ async fn resolve_ws_url(url: &str) -> Result<String> {
     let version_url = format!("{}/json/version", url.trim_end_matches('/'));
     let resp: Value = reqwest::get(&version_url)
         .await
-        .map_err(|e| YosoiError::ConnectionFailed(format!("GET {version_url}: {e}")))?
+        .map_err(|e| VoidCrawlError::ConnectionFailed(format!("GET {version_url}: {e}")))?
         .json()
         .await
-        .map_err(|e| YosoiError::ConnectionFailed(format!("parse {version_url}: {e}")))?;
+        .map_err(|e| VoidCrawlError::ConnectionFailed(format!("parse {version_url}: {e}")))?;
 
     resp.get("webSocketDebuggerUrl").and_then(|v| v.as_str()).map(ToString::to_string).ok_or_else(
         || {
-            YosoiError::ConnectionFailed(
+            VoidCrawlError::ConnectionFailed(
                 "webSocketDebuggerUrl not found in /json/version response".into(),
             )
         },

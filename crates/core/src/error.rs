@@ -5,7 +5,7 @@ use thiserror::Error;
 
 /// All errors produced by this crate.
 #[derive(Debug, Error)]
-pub enum YosoiError {
+pub enum VoidCrawlError {
     #[error("browser launch failed: {0}")]
     LaunchFailed(String),
 
@@ -46,9 +46,9 @@ pub enum YosoiError {
 use core::result;
 
 /// Convenience alias.
-pub type Result<T> = result::Result<T, YosoiError>;
+pub type Result<T> = result::Result<T, VoidCrawlError>;
 
-impl From<CdpError> for YosoiError {
+impl From<CdpError> for VoidCrawlError {
     fn from(e: CdpError) -> Self {
         Self::Other(e.to_string())
     }

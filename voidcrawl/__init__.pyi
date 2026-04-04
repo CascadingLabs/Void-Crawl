@@ -11,14 +11,20 @@ from voidcrawl._ext import (
 from voidcrawl._ext import (
     _AcquireContext as _AcquireContext,
 )
+from voidcrawl.actions._protocol import (
+    JsTab as JsTab,
+)
+from voidcrawl.actions._protocol import (
+    Tab as Tab,
+)
 from voidcrawl.contracts import (
     Attr as Attr,
 )
 from voidcrawl.contracts import (
-    Contract as Contract,
+    Schema as Schema,
 )
 from voidcrawl.contracts import (
-    Selector as Selector,
+    Text as Text,
 )
 from voidcrawl.contracts import (
     safe_url as safe_url,
@@ -32,14 +38,33 @@ __all__ = [
     "BrowserConfig",
     "BrowserPool",
     "BrowserSession",
-    "Contract",
+    "JsTab",
     "Page",
+    "PageResponse",
     "PoolConfig",
     "PooledTab",
-    "Selector",
+    "Schema",
+    "Tab",
+    "Text",
     "safe_url",
     "strip_tags",
 ]
+
+class PageResponse:
+    """Result of :meth:`Page.goto` / :meth:`PooledTab.goto`.
+
+    Attributes:
+        html: Full outer HTML after network idle.
+        url: Final URL after any redirects.
+        status_code: HTTP status of the last response, or ``None`` when served
+            from cache or a service worker.
+        redirected: ``True`` when at least one HTTP redirect occurred.
+    """
+
+    html: str
+    url: str
+    status_code: int | None
+    redirected: bool
 
 class BrowserConfig:
     """Configuration for launching or connecting to a single browser instance."""
@@ -72,6 +97,7 @@ class PoolConfig:
     tabs_per_browser: int
     tab_max_uses: int
     tab_max_idle_secs: int
+    auto_evict: bool
     chrome_ws_urls: list[str]
     browser: BrowserConfig
 
@@ -82,6 +108,7 @@ class PoolConfig:
         tabs_per_browser: int = 4,
         tab_max_uses: int = 50,
         tab_max_idle_secs: int = 60,
+        auto_evict: bool = True,
         chrome_ws_urls: list[str] = ...,
         browser: BrowserConfig = ...,
     ) -> None: ...

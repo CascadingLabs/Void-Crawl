@@ -6,12 +6,17 @@ Stealth mode (enabled by default) patches common bot-detection signals:
   - navigator.languages is set realistically
   - window.chrome.runtime is spoofed
   - navigator.permissions.query behaves like a real browser
+
+Uses qscrape.dev/l2/scoretap — a JS-rendered site that requires a real
+browser to render content, making it a realistic stealth test target.
 """
 
 import asyncio
 import json
 
 from voidcrawl import BrowserConfig, BrowserSession, Page
+
+TARGET_URL = "https://qscrape.dev/l2/scoretap"
 
 DETECTION_JS = """
 JSON.stringify({
@@ -35,14 +40,16 @@ async def check_fingerprint(label: str, page: Page) -> None:
 
 async def main() -> None:
     """Compare fingerprints with stealth enabled vs disabled."""
-    # Stealth ON (default)
+    # Stealth ON (default) — navigator.webdriver should be undefined/false
     async with BrowserSession(BrowserConfig(stealth=True)) as browser:
-        page = await browser.new_page("https://example.com")
+        page = await browser.new_page(TARGET_URL)
+        await page.wait_for_network_idle()
         await check_fingerprint("stealth=True", page)
 
-    # Stealth OFF
+    # Stealth OFF — navigator.webdriver will be true, plugins empty
     async with BrowserSession(BrowserConfig(stealth=False)) as browser:
-        page = await browser.new_page("https://example.com")
+        page = await browser.new_page(TARGET_URL)
+        await page.wait_for_network_idle()
         await check_fingerprint("stealth=False", page)
 
 

@@ -21,10 +21,14 @@ use std::{
 };
 
 use futures::future;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::{
+    sync::{Mutex, Semaphore},
+    task::JoinHandle,
+    time::sleep,
+};
 
 use crate::{
-    error::{Result, YosoiError},
+    error::{Result, VoidCrawlError},
     page::Page,
     session::BrowserSession,
 };
@@ -40,6 +44,14 @@ pub struct PoolConfig {
     pub tab_max_uses:      u32,
     /// Evict idle tabs after this many seconds.
     pub tab_max_idle_secs: u64,
+    /// Automatically run idle eviction in a background task.
+    ///
+    /// When `true` (the default), calling
+    /// [`BrowserPool::spawn_eviction_task`] will start a Tokio task that
+    /// calls [`BrowserPool::evict_idle`] every `tab_max_idle_secs / 2`
+    /// seconds.  The task is cancelled when the handle returned by
+    /// `spawn_eviction_task` is aborted (typically on pool close).
+    pub auto_evict:        bool,
 }
 
 impl Default for PoolConfig {
@@ -49,6 +61,7 @@ impl Default for PoolConfig {
             tabs_per_browser:  4,
             tab_max_uses:      50,
             tab_max_idle_secs: 60,
+            auto_evict:        true,
         }
     }
 }
@@ -98,7 +111,7 @@ impl fmt::Debug for PooledTab {
 /// let tab = pool.acquire().await?;
 /// tab.page.navigate("https://example.com").await?;
 /// let html = tab.page.content().await?;
-/// pool.release(tab).await?;
+/// pool.release(tab).await;
 ///
 /// pool.close().await?;
 /// # Ok(())
@@ -177,7 +190,7 @@ impl BrowserPool {
                 .collect();
 
             if futs.is_empty() {
-                return Err(YosoiError::Other(
+                return Err(VoidCrawlError::Other(
                     "CHROME_WS_URLS is set but contains no valid URLs".into(),
                 ));
             }
@@ -219,6 +232,7 @@ impl BrowserPool {
             tabs_per_browser,
             tab_max_uses,
             tab_max_idle_secs,
+            auto_evict: true,
         };
 
         Ok(Self::new(config, sessions))
@@ -254,7 +268,7 @@ impl BrowserPool {
             for _ in 0..self.config.tabs_per_browser {
                 futs.push(async move {
                     let page = session.new_blank_page().await?;
-                    Ok::<_, YosoiError>(PooledTab {
+                    Ok::<_, VoidCrawlError>(PooledTab {
                         page,
                         use_count: 0,
                         last_used: Instant::now(),
@@ -267,41 +281,27 @@ impl BrowserPool {
         // Create all tabs in parallel
         let results = future::join_all(futs).await;
 
-        // Insert successful tabs one-by-one. Each tab consumes a permit
-        // (marking the slot as "occupied") then immediately gets it back
-        // (marking it as "available in the ready queue"). If a tab failed,
-        // we skip it — the permit stays unconsumed and available for lazy
-        // creation later via acquire().
+        // The semaphore tracks checked-out tabs, not ready-queue occupancy.
+        // Tabs in the ready queue are "available" — they hold no permit.
+        // Just push successful tabs directly; failed tabs are skipped and
+        // their capacity remains available for lazy creation via acquire().
         let mut ready = self.ready.lock().await;
-        let mut first_err: Option<YosoiError> = None;
+        let mut first_err: Option<VoidCrawlError> = None;
         for result in results {
             match result {
-                Ok(tab) => {
-                    let permit = self
-                        .semaphore
-                        .acquire()
-                        .await
-                        .map_err(|_| YosoiError::Other("pool semaphore closed".into()))?;
-                    permit.forget();
-                    ready.push_back(tab);
-                    // Immediately re-add: this tab is in the ready queue (available).
-                    self.semaphore.add_permits(1);
-                }
+                Ok(tab) => ready.push_back(tab),
                 Err(e) => {
                     if first_err.is_none() {
                         first_err = Some(e);
                     }
-                    // Skip — the permit stays available for lazy growth.
                 }
             }
         }
 
         // If any tabs failed, report the first error but keep the
         // successfully created tabs in the pool.
-        if let Some(e) = first_err {
-            return Err(e);
-        }
-        Ok(())
+        drop(ready);
+        if let Some(e) = first_err { Err(e) } else { Ok(()) }
     }
 
     /// Check out a tab from the pool.
@@ -319,7 +319,7 @@ impl BrowserPool {
             .semaphore
             .acquire()
             .await
-            .map_err(|_| YosoiError::Other("pool semaphore closed".into()))?;
+            .map_err(|_| VoidCrawlError::Other("pool semaphore closed".into()))?;
         // Don't auto-return the permit on drop — release() will add it back
         // on the success path. Error paths below must add_permits(1) manually.
         permit.forget();
@@ -373,13 +373,12 @@ impl BrowserPool {
     /// Instant return — no CDP round-trip. The next caller's `navigate(url)`
     /// overwrites prior page content; stealth scripts persist across
     /// navigations.
-    pub async fn release(&self, mut tab: PooledTab) -> Result<()> {
+    pub async fn release(&self, mut tab: PooledTab) {
         tab.use_count += 1;
         tab.last_used = Instant::now();
 
         self.ready.lock().await.push_back(tab);
         self.semaphore.add_permits(1);
-        Ok(())
     }
 
     /// Close idle tabs that have exceeded `tab_max_idle_secs` and open fresh
@@ -416,7 +415,7 @@ impl BrowserPool {
                 async move {
                     let _ = tab.page.close().await;
                     let page = session.new_blank_page().await?;
-                    Ok::<_, YosoiError>(PooledTab {
+                    Ok::<_, VoidCrawlError>(PooledTab {
                         page,
                         use_count: 0,
                         last_used: Instant::now(),
@@ -428,16 +427,48 @@ impl BrowserPool {
 
         let results = future::join_all(futs).await;
         let mut ready = self.ready.lock().await;
+        let mut first_err: Option<VoidCrawlError> = None;
         for result in results {
-            ready.push_back(result?);
+            match result {
+                Ok(tab) => ready.push_back(tab),
+                Err(e) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+            }
         }
-
-        Ok(())
+        // Release the Mutex before returning, then surface the first error.
+        drop(ready);
+        if let Some(e) = first_err { Err(e) } else { Ok(()) }
     }
 
     /// Access the pool configuration.
     pub fn config(&self) -> &PoolConfig {
         &self.config
+    }
+
+    /// Spawn a background Tokio task that periodically calls
+    /// [`evict_idle`](Self::evict_idle).
+    ///
+    /// The eviction interval is `tab_max_idle_secs / 2` (minimum 1 second).
+    /// Abort the returned [`JoinHandle`] to stop the task — this is done
+    /// automatically when the Python pool context exits.
+    ///
+    /// # Panics
+    ///
+    /// Must be called from within a Tokio runtime context.
+    pub fn spawn_eviction_task(self: Arc<Self>) -> JoinHandle<()> {
+        let pool = Arc::clone(&self);
+        let interval = Duration::from_secs((self.config.tab_max_idle_secs / 2).max(1));
+        tokio::spawn(async move {
+            loop {
+                sleep(interval).await;
+                // Ignore errors — a single eviction failure (e.g. a tab
+                // failing to close) should not kill the background task.
+                let _ = pool.evict_idle().await;
+            }
+        })
     }
 
     /// Drain all tabs and close all browser sessions.

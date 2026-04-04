@@ -51,7 +51,6 @@ from voidcrawl.actions.builtin import (
 )
 
 __all__ = [
-    # framework
     "ActionNode",
     "CdpClick",
     "CdpClickAndHold",
@@ -63,29 +62,23 @@ __all__ = [
     "CdpScrollUp",
     "CdpTypeText",
     "ClearInput",
-    # builtin - click
     "ClickAt",
     "ClickElement",
     "Flow",
     "FlowResult",
-    # builtin - dom
     "GetAttribute",
     "GetText",
-    "QueryAll",
-    # builtin - hover
     "Hover",
     "JsActionNode",
     "JsSource",
     "JsTab",
+    "QueryAll",
     "ScrollBy",
-    # builtin - scroll
     "ScrollTo",
     "SelectOption",
     "SetAttribute",
-    # builtin - input
     "SetInputValue",
     "Tab",
-    # builtin - wait
     "WaitForSelector",
     "WaitForTimeout",
     "inline_js",
