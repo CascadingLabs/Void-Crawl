@@ -7,7 +7,7 @@ use std::{collections::HashMap, convert::Infallible, fmt, sync::Arc, time::Durat
 
 use futures::future;
 use pyo3::{
-    exceptions::PyRuntimeError,
+    exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
     types::{PyBytes, PyDict, PyList, PyType},
 };
@@ -15,8 +15,8 @@ use pyo3_async_runtimes::tokio::future_into_py;
 use serde_json::Value;
 use tokio::sync::Mutex;
 use void_crawl_core::{
-    BrowserMode, BrowserPool, BrowserSession, Page, PoolConfig, PooledTab, StealthConfig,
-    YosoiError,
+    BrowserMode, BrowserPool, BrowserSession, DispatchKeyEventType, DispatchMouseEventType,
+    MouseButton, Page, PoolConfig, PooledTab, StealthConfig, YosoiError,
 };
 
 // ── Error conversion ────────────────────────────────────────────────────
@@ -83,6 +83,49 @@ fn json_to_py(py: Python<'_>, val: Value) -> PyResult<Bound<'_, PyAny>> {
             }
             Ok(dict.into_any())
         }
+    }
+}
+
+// ── CDP Input enum conversions ──────────────────────────────────────────
+
+fn parse_mouse_event_type(s: &str) -> PyResult<DispatchMouseEventType> {
+    match s {
+        "mousePressed" => Ok(DispatchMouseEventType::MousePressed),
+        "mouseReleased" => Ok(DispatchMouseEventType::MouseReleased),
+        "mouseMoved" => Ok(DispatchMouseEventType::MouseMoved),
+        "mouseWheel" => Ok(DispatchMouseEventType::MouseWheel),
+        other => Err(PyValueError::new_err(format!(
+            "unknown mouse event type: {other:?} \
+             (expected mousePressed, mouseReleased, mouseMoved, or mouseWheel)"
+        ))),
+    }
+}
+
+fn parse_mouse_button(s: &str) -> PyResult<MouseButton> {
+    match s {
+        "none" => Ok(MouseButton::None),
+        "left" => Ok(MouseButton::Left),
+        "middle" => Ok(MouseButton::Middle),
+        "right" => Ok(MouseButton::Right),
+        "back" => Ok(MouseButton::Back),
+        "forward" => Ok(MouseButton::Forward),
+        other => Err(PyValueError::new_err(format!(
+            "unknown mouse button: {other:?} \
+             (expected none, left, middle, right, back, or forward)"
+        ))),
+    }
+}
+
+fn parse_key_event_type(s: &str) -> PyResult<DispatchKeyEventType> {
+    match s {
+        "keyDown" => Ok(DispatchKeyEventType::KeyDown),
+        "keyUp" => Ok(DispatchKeyEventType::KeyUp),
+        "rawKeyDown" => Ok(DispatchKeyEventType::RawKeyDown),
+        "char" => Ok(DispatchKeyEventType::Char),
+        other => Err(PyValueError::new_err(format!(
+            "unknown key event type: {other:?} \
+             (expected keyDown, keyUp, rawKeyDown, or char)"
+        ))),
     }
 }
 
@@ -363,6 +406,82 @@ impl PyPage {
                 .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
             let result = page
                 .wait_for_network_idle(Duration::from_secs_f64(timeout))
+                .await
+                .map_err(to_py_err);
+            inner.lock().await.replace(page);
+            result
+        })
+    }
+
+    /// Dispatch a mouse event via the CDP Input.dispatchMouseEvent command.
+    #[pyo3(signature = (event_type, x, y, button="left", click_count=1, delta_x=None, delta_y=None, modifiers=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_mouse_event<'py>(
+        &self,
+        py: Python<'py>,
+        event_type: &str,
+        x: f64,
+        y: f64,
+        button: &str,
+        click_count: i64,
+        delta_x: Option<f64>,
+        delta_y: Option<f64>,
+        modifiers: Option<i64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let evt = parse_mouse_event_type(event_type)?;
+        let btn = parse_mouse_button(button)?;
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let page = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
+            let result = page
+                .dispatch_mouse_event(
+                    evt,
+                    x,
+                    y,
+                    Some(btn),
+                    Some(click_count),
+                    delta_x,
+                    delta_y,
+                    modifiers,
+                )
+                .await
+                .map_err(to_py_err);
+            inner.lock().await.replace(page);
+            result
+        })
+    }
+
+    /// Dispatch a key event via the CDP Input.dispatchKeyEvent command.
+    #[pyo3(signature = (event_type, key=None, code=None, text=None, modifiers=None))]
+    fn dispatch_key_event<'py>(
+        &self,
+        py: Python<'py>,
+        event_type: &str,
+        key: Option<String>,
+        code: Option<String>,
+        text: Option<String>,
+        modifiers: Option<i64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let evt = parse_key_event_type(event_type)?;
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let page = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
+            let result = page
+                .dispatch_key_event(
+                    evt,
+                    key.as_deref(),
+                    code.as_deref(),
+                    text.as_deref(),
+                    modifiers,
+                )
                 .await
                 .map_err(to_py_err);
             inner.lock().await.replace(page);
@@ -785,6 +904,84 @@ impl PyPooledTab {
         })
     }
 
+    /// Dispatch a mouse event via the CDP Input.dispatchMouseEvent command.
+    #[pyo3(signature = (event_type, x, y, button="left", click_count=1, delta_x=None, delta_y=None, modifiers=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_mouse_event<'py>(
+        &self,
+        py: Python<'py>,
+        event_type: &str,
+        x: f64,
+        y: f64,
+        button: &str,
+        click_count: i64,
+        delta_x: Option<f64>,
+        delta_y: Option<f64>,
+        modifiers: Option<i64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let evt = parse_mouse_event_type(event_type)?;
+        let btn = parse_mouse_button(button)?;
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let tab = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
+            let result = tab
+                .page
+                .dispatch_mouse_event(
+                    evt,
+                    x,
+                    y,
+                    Some(btn),
+                    Some(click_count),
+                    delta_x,
+                    delta_y,
+                    modifiers,
+                )
+                .await
+                .map_err(to_py_err);
+            inner.lock().await.replace(tab);
+            result
+        })
+    }
+
+    /// Dispatch a key event via the CDP Input.dispatchKeyEvent command.
+    #[pyo3(signature = (event_type, key=None, code=None, text=None, modifiers=None))]
+    fn dispatch_key_event<'py>(
+        &self,
+        py: Python<'py>,
+        event_type: &str,
+        key: Option<String>,
+        code: Option<String>,
+        text: Option<String>,
+        modifiers: Option<i64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let evt = parse_key_event_type(event_type)?;
+        let inner = Arc::clone(&self.inner);
+        future_into_py(py, async move {
+            let tab = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
+            let result = tab
+                .page
+                .dispatch_key_event(
+                    evt,
+                    key.as_deref(),
+                    code.as_deref(),
+                    text.as_deref(),
+                    modifiers,
+                )
+                .await
+                .map_err(to_py_err);
+            inner.lock().await.replace(tab);
+            result
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!("PooledTab(use_count={})", self.use_count)
     }
@@ -1166,7 +1363,7 @@ impl PyPoolParamsContext {
 // ── Module ──────────────────────────────────────────────────────────────
 
 #[pymodule]
-fn void_crawl(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBrowserSession>()?;
     m.add_class::<PyPage>()?;
     m.add_class::<PyBrowserPool>()?;

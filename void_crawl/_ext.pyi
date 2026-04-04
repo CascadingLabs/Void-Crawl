@@ -25,6 +25,25 @@ class PooledTab:
         self, timeout: float = 10.0, min_length: int = 5000, stable_checks: int = 5
     ) -> bool: ...
     async def wait_for_network_idle(self, timeout: float = 30.0) -> str | None: ...
+    async def dispatch_mouse_event(
+        self,
+        event_type: str,
+        x: float,
+        y: float,
+        button: str = "left",
+        click_count: int = 1,
+        delta_x: float | None = None,
+        delta_y: float | None = None,
+        modifiers: int | None = None,
+    ) -> None: ...
+    async def dispatch_key_event(
+        self,
+        event_type: str,
+        key: str | None = None,
+        code: str | None = None,
+        text: str | None = None,
+        modifiers: int | None = None,
+    ) -> None: ...
 
 class _AcquireContext:
     async def __aenter__(self) -> PooledTab: ...
@@ -89,6 +108,25 @@ class Page:
         self, timeout: float = 10.0, min_length: int = 5000, stable_checks: int = 5
     ) -> bool: ...
     async def wait_for_network_idle(self, timeout: float = 30.0) -> str | None: ...
+    async def dispatch_mouse_event(
+        self,
+        event_type: str,
+        x: float,
+        y: float,
+        button: str = "left",
+        click_count: int = 1,
+        delta_x: float | None = None,
+        delta_y: float | None = None,
+        modifiers: int | None = None,
+    ) -> None: ...
+    async def dispatch_key_event(
+        self,
+        event_type: str,
+        key: str | None = None,
+        code: str | None = None,
+        text: str | None = None,
+        modifiers: int | None = None,
+    ) -> None: ...
     async def close(self) -> None: ...
 
 class BrowserSession:
