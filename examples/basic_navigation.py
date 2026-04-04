@@ -2,7 +2,7 @@
 
 import asyncio
 
-from void_crawl import BrowserPool, PoolConfig
+from voidcrawl import BrowserPool, PoolConfig
 
 
 async def main() -> None:

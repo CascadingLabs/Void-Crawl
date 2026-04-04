@@ -1,4 +1,4 @@
-"""Interactive step debugger for void_crawl actions.
+"""Interactive step debugger for voidcrawl actions.
 
 Provides :class:`DebugSession` for stepping through actions with
 breakpoints, history inspection, and back/forward navigation.
@@ -8,7 +8,7 @@ automatically pause execution.
 Example:
     Minimal usage::
 
-        from void_crawl.debug import DebugSession
+        from voidcrawl.debug import DebugSession
 
         async with BrowserSession(BrowserConfig(headless=False)) as browser:
             page = await browser.new_page(url)
@@ -39,12 +39,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from void_crawl.actions._flow import FlowResult
+from voidcrawl.actions._flow import FlowResult
 
 if TYPE_CHECKING:
-    from void_crawl.actions._base import ActionNode
-    from void_crawl.actions._flow import Flow
-    from void_crawl.actions._protocol import Tab
+    from voidcrawl.actions._base import ActionNode
+    from voidcrawl.actions._flow import Flow
+    from voidcrawl.actions._protocol import Tab
 
 __all__ = [
     "DebugSession",

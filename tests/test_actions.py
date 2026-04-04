@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from void_crawl.actions import (
+from voidcrawl.actions import (
     ActionNode,
     CdpClick,
     CdpClickAndHold,

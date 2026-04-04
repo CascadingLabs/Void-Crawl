@@ -9,22 +9,22 @@ This sub-package exposes two tiers of actions:
 
 Actions can be composed into :class:`Flow` sequences and executed
 against any object satisfying the :class:`Tab` protocol (both
-:class:`~void_crawl.Page` and :class:`~void_crawl.PooledTab`).
+:class:`~voidcrawl.Page` and :class:`~voidcrawl.PooledTab`).
 
 Custom actions are created by subclassing :class:`ActionNode` or
 :class:`JsActionNode` and implementing :meth:`~ActionNode.run`.
 """
 
-from void_crawl.actions._base import (
+from voidcrawl.actions._base import (
     ActionNode,
     JsActionNode,
     JsSource,
     inline_js,
     load_js,
 )
-from void_crawl.actions._flow import Flow, FlowResult
-from void_crawl.actions._protocol import JsTab, Tab
-from void_crawl.actions.builtin import (
+from voidcrawl.actions._flow import Flow, FlowResult
+from voidcrawl.actions._protocol import JsTab, Tab
+from voidcrawl.actions.builtin import (
     CdpClick,
     CdpClickAndHold,
     CdpHover,

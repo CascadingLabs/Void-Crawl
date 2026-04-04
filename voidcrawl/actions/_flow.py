@@ -1,6 +1,6 @@
 """Compose multiple actions into sequential flows.
 
-A :class:`Flow` groups ordered :class:`~void_crawl.actions.ActionNode`
+A :class:`Flow` groups ordered :class:`~voidcrawl.actions.ActionNode`
 instances and runs them one-by-one against a single tab, collecting
 every result into a :class:`FlowResult`.
 """
@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from void_crawl.actions._base import ActionNode
-    from void_crawl.actions._protocol import Tab
+    from voidcrawl.actions._base import ActionNode
+    from voidcrawl.actions._protocol import Tab
 
 
 @dataclass

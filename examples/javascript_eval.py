@@ -2,7 +2,7 @@
 
 import asyncio
 
-from void_crawl import BrowserPool, PoolConfig
+from voidcrawl import BrowserPool, PoolConfig
 
 
 async def main() -> None:
@@ -23,7 +23,7 @@ async def main() -> None:
         print(f"Viewport: {dims}")
 
         # Modify the DOM via JS
-        await tab.evaluate_js("document.title = 'Modified by void_crawl'")
+        await tab.evaluate_js("document.title = 'Modified by voidcrawl'")
         print(f"New title: {await tab.title()}")
 
 

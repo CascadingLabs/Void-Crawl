@@ -9,8 +9,8 @@ Run modes controlled by ``MODE`` at the top of the file:
 
 import asyncio
 
-from void_crawl import BrowserConfig, BrowserSession
-from void_crawl.actions import (
+from voidcrawl import BrowserConfig, BrowserSession
+from voidcrawl.actions import (
     ActionNode,
     CdpClick,
     ClickElement,
@@ -22,7 +22,7 @@ from void_crawl.actions import (
     Tab,
     inline_js,
 )
-from void_crawl.debug import DebugSession, vd_breakpoint
+from voidcrawl.debug import DebugSession, vd_breakpoint
 
 # ── Run configuration ────────────────────────────────────────────────────
 MODE = "debug"  # "debug" | "replay" | "fast"

@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from void_crawl.actions._base import ActionNode, JsActionNode, load_js
+from voidcrawl.actions._base import ActionNode, JsActionNode, load_js
 
 if TYPE_CHECKING:
-    from void_crawl.actions._protocol import Tab
+    from voidcrawl.actions._protocol import Tab
 
 _JS_DIR = Path(__file__).parent.parent / "js"
 

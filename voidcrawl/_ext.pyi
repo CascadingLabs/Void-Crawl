@@ -1,16 +1,16 @@
-"""Type stubs for the void_crawl._ext native extension module.
+"""Type stubs for the voidcrawl._ext native extension module.
 
-Internal — import from ``void_crawl`` instead.
+Internal — import from ``voidcrawl`` instead.
 """
 
 from __future__ import annotations
 
 class PooledTab:
-    """A tab checked out from a :class:`~void_crawl.BrowserPool`.
+    """A tab checked out from a :class:`~voidcrawl.BrowserPool`.
 
     Exposes the same page-interaction methods as :class:`Page` but must
     not be closed manually — return it to the pool via the async context
-    manager or :meth:`~void_crawl.BrowserPool.release`.
+    manager or :meth:`~voidcrawl.BrowserPool.release`.
 
     Attributes:
         use_count: How many times this tab has been acquired (0 on first use).
@@ -216,7 +216,7 @@ class _PoolParamsContext:
 class BrowserPool:
     """Rust-side pool of reusable browser tabs (internal).
 
-    Use the Python wrapper :class:`~void_crawl.BrowserPool` instead.
+    Use the Python wrapper :class:`~voidcrawl.BrowserPool` instead.
     """
 
     @classmethod
@@ -444,7 +444,7 @@ class Page:
 class BrowserSession:
     """Rust-side browser session (internal).
 
-    Use the Python wrapper :class:`~void_crawl.BrowserSession` instead.
+    Use the Python wrapper :class:`~voidcrawl.BrowserSession` instead.
     """
 
     def __init__(

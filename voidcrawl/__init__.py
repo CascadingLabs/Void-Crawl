@@ -1,6 +1,6 @@
 """Rust-native CDP browser automation for Python via PyO3.
 
-``void_crawl`` provides async-first browser automation backed by a Rust
+``voidcrawl`` provides async-first browser automation backed by a Rust
 CDP (Chrome DevTools Protocol) core, exposed to Python through PyO3.
 Launch headless or headful Chrome sessions, manage pooled tabs for
 concurrent crawling, and compose reusable browser actions.
@@ -25,13 +25,13 @@ import os
 
 from pydantic import BaseModel, Field
 
-from void_crawl._ext import (
+from voidcrawl._ext import (
     BrowserPool as _BrowserPool,
 )
-from void_crawl._ext import (
+from voidcrawl._ext import (
     BrowserSession as _BrowserSession,
 )
-from void_crawl._ext import (
+from voidcrawl._ext import (
     Page,
     PooledTab,
     _AcquireContext,

@@ -11,7 +11,7 @@ Stealth mode (enabled by default) patches common bot-detection signals:
 import asyncio
 import json
 
-from void_crawl import BrowserConfig, BrowserSession, Page
+from voidcrawl import BrowserConfig, BrowserSession, Page
 
 DETECTION_JS = """
 JSON.stringify({

@@ -2,7 +2,7 @@
 
 import asyncio
 
-from void_crawl import BrowserConfig, BrowserSession
+from voidcrawl import BrowserConfig, BrowserSession
 
 FORM_PAGE = """data:text/html,
 <html>

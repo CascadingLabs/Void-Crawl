@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from void_crawl import BrowserPool, PoolConfig
+from voidcrawl import BrowserPool, PoolConfig
 
 OUTPUT_DIR = Path("output")
 

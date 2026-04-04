@@ -2,7 +2,7 @@
 
 import asyncio
 
-from void_crawl import BrowserConfig, BrowserSession
+from voidcrawl import BrowserConfig, BrowserSession
 
 
 async def custom_headers() -> None:

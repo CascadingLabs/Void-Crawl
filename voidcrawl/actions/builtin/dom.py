@@ -6,7 +6,7 @@ Provides :class:`GetAttribute`, :class:`GetText`, and
 
 from __future__ import annotations
 
-from void_crawl.actions._base import JsActionNode, inline_js
+from voidcrawl.actions._base import JsActionNode, inline_js
 
 
 class GetAttribute(JsActionNode):

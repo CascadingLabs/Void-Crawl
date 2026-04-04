@@ -1,4 +1,4 @@
-"""Use void_crawl with Chrome running headful inside Docker.
+"""Use voidcrawl with Chrome running headful inside Docker.
 
 This example connects to Chrome instances running in the Docker headful
 container (Sway + wayvnc + GPU-accelerated Chrome). You can watch
@@ -27,7 +27,7 @@ What you'll see:
 
 import asyncio
 
-from void_crawl import BrowserConfig, BrowserPool, PoolConfig
+from voidcrawl import BrowserConfig, BrowserPool, PoolConfig
 
 
 async def main() -> None:

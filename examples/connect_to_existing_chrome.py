@@ -9,7 +9,7 @@ Then run this script to attach to it.
 
 import asyncio
 
-from void_crawl import BrowserConfig, BrowserSession
+from voidcrawl import BrowserConfig, BrowserSession
 
 
 async def main() -> None:

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from void_crawl.actions._protocol import JsTab, Tab
+    from voidcrawl.actions._protocol import JsTab, Tab
 
 
 class JsSource:
@@ -96,8 +96,8 @@ class ActionNode(ABC):
     Subclass and implement :meth:`run` to create a custom action.  Use
     :class:`JsActionNode` when the action can be expressed as a single
     JavaScript snippet; subclass ``ActionNode`` directly for CDP-level
-    actions that need :meth:`~void_crawl.actions.Tab.dispatch_mouse_event`
-    or :meth:`~void_crawl.actions.Tab.dispatch_key_event`.
+    actions that need :meth:`~voidcrawl.actions.Tab.dispatch_mouse_event`
+    or :meth:`~voidcrawl.actions.Tab.dispatch_key_event`.
     """
 
     @abstractmethod
@@ -105,7 +105,7 @@ class ActionNode(ABC):
         """Execute this action against *tab*.
 
         Args:
-            tab: Any object satisfying the :class:`~void_crawl.actions.Tab`
+            tab: Any object satisfying the :class:`~voidcrawl.actions.Tab`
                 protocol (e.g. :class:`Page` or :class:`PooledTab`).
 
         Returns:
@@ -159,7 +159,7 @@ class JsActionNode(ActionNode):
         """Evaluate the JS snippet in *tab* with the current :meth:`params`.
 
         Args:
-            tab: Any object satisfying :class:`~void_crawl.actions.JsTab`.
+            tab: Any object satisfying :class:`~voidcrawl.actions.JsTab`.
 
         Returns:
             The JSON-deserialised return value from the snippet.
