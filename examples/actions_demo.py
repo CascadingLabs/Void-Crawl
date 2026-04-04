@@ -6,18 +6,18 @@ Extracts all article cards from the feed and prints them as structured data.
 import asyncio
 import json
 
-import voidcrawl as vd
+import voidcrawl as vc
 from voidcrawl import BrowserConfig, BrowserSession
 from voidcrawl.actions import QueryAll
 
 
-class Article(vd.Contract):
-    headline: str = vd.Selector(".hn-feed-headline")
-    category: str | None = vd.Selector(".hn-feed-cat")
-    excerpt: str | None = vd.Selector(".hn-feed-excerpt", sanitize=vd.strip_tags)
-    meta: str | None = vd.Selector(".hn-feed-meta")
-    href: str | None = vd.Attr("a", "href", sanitize=vd.safe_url)
-    img: str | None = vd.Attr(".hn-feed-img", "src", sanitize=vd.safe_url)
+class Article(vc.Contract):
+    headline: str = vc.Selector(".hn-feed-headline")
+    category: str | None = vc.Selector(".hn-feed-cat")
+    excerpt: str | None = vc.Selector(".hn-feed-excerpt", sanitize=vc.strip_tags)
+    meta: str | None = vc.Selector(".hn-feed-meta")
+    href: str | None = vc.Attr("a", "href", sanitize=vc.safe_url)
+    img: str | None = vc.Attr(".hn-feed-img", "src", sanitize=vc.safe_url)
 
 
 TARGET_URL = "https://qscrape.dev/l2/news"

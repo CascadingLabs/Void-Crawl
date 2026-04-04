@@ -10,20 +10,20 @@ import re
 
 import httpx
 
-import voidcrawl as vd
+import voidcrawl as vc
 from voidcrawl import BrowserConfig, BrowserSession
 from voidcrawl.actions import QueryAll
 
 TARGET_URL = "https://qscrape.dev/l2/scoretap"
 
 
-class Match(vd.Contract):
-    team_a: str = vd.Selector(".st-team-right .st-team-name")
-    team_b: str = vd.Selector(".st-team:not(.st-team-right) .st-team-name")
-    score: str | None = vd.Selector(".st-score")
-    status: str | None = vd.Selector(".st-live-badge, .st-final-badge")
-    event: str | None = vd.Selector(".st-match-event")
-    game: str | None = vd.Selector(".st-game-tag")
+class Match(vc.Contract):
+    team_a: str = vc.Selector(".st-team-right .st-team-name")
+    team_b: str = vc.Selector(".st-team:not(.st-team-right) .st-team-name")
+    score: str | None = vc.Selector(".st-score")
+    status: str | None = vc.Selector(".st-live-badge, .st-final-badge")
+    event: str | None = vc.Selector(".st-match-event")
+    game: str | None = vc.Selector(".st-game-tag")
 
 
 # ── 1. httpx (static HTML only) ─────────────────────────────────────────
@@ -78,10 +78,17 @@ async def scrape_with_voidcrawl() -> None:
         for m in matches:
             score = (m.score or "").replace("\xa0", " ")
             status = (m.status or "").replace("●", "").strip()
-            print("  " + col.format(
-                m.team_a, score, m.team_b,
-                status, m.game or "", m.event or "",
-            ))
+            print(
+                "  "
+                + col.format(
+                    m.team_a,
+                    score,
+                    m.team_b,
+                    status,
+                    m.game or "",
+                    m.event or "",
+                )
+            )
 
         await page.close()
 

@@ -92,9 +92,9 @@ class QueryAll(JsActionNode, Generic[_T]):
 
     Example — typed Contract::
 
-        class Article(vd.Contract):
-            title: str = vd.Selector("h2")
-            url: str | None = vd.Attr("a", "href")
+        class Article(vc.Contract):
+            title: str = vc.Selector("h2")
+            url: str | None = vc.Attr("a", "href")
 
 
         QueryAll(".article", Article)

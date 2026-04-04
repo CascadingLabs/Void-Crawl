@@ -10,14 +10,14 @@ per-field via the ``sanitize=`` keyword argument.
 
 Example::
 
-    import voidcrawl as vd
+    import voidcrawl as vc
     from voidcrawl.actions import QueryAll
 
 
-    class Article(vd.Contract):
-        headline: str = vd.Selector("h2")
-        url: str | None = vd.Attr("a", "href", sanitize=vd.safe_url)
-        date: str | None = vd.Selector(".byline", sanitize=vd.strip_tags)
+    class Article(vc.Contract):
+        headline: str = vc.Selector("h2")
+        url: str | None = vc.Attr("a", "href", sanitize=vc.safe_url)
+        date: str | None = vc.Selector(".byline", sanitize=vc.strip_tags)
 
 
     articles = await QueryAll(".article", Article).run(page)
