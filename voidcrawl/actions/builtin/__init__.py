@@ -12,7 +12,7 @@ from voidcrawl.actions.builtin.click import (
     ClickAt,
     ClickElement,
 )
-from voidcrawl.actions.builtin.dom import GetAttribute, GetText, SetAttribute
+from voidcrawl.actions.builtin.dom import GetAttribute, GetText, QueryAll, SetAttribute
 from voidcrawl.actions.builtin.hover import CdpHover, Hover
 from voidcrawl.actions.builtin.input import (
     CdpTypeText,
@@ -48,6 +48,7 @@ __all__ = [
     # dom
     "GetAttribute",
     "GetText",
+    "QueryAll",
     # hover
     "Hover",
     "ScrollBy",

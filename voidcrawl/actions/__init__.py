@@ -40,6 +40,7 @@ from voidcrawl.actions.builtin import (
     GetAttribute,
     GetText,
     Hover,
+    QueryAll,
     ScrollBy,
     ScrollTo,
     SelectOption,
@@ -70,6 +71,7 @@ __all__ = [
     # builtin - dom
     "GetAttribute",
     "GetText",
+    "QueryAll",
     # builtin - hover
     "Hover",
     "JsActionNode",

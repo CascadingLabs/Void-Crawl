@@ -37,14 +37,20 @@ from voidcrawl._ext import (
     _AcquireContext,
     _PoolParamsContext,
 )
+from voidcrawl.contracts import Attr, Contract, Selector, safe_url, strip_tags
 
 __all__ = [
+    "Attr",
     "BrowserConfig",
     "BrowserPool",
     "BrowserSession",
+    "Contract",
     "Page",
     "PoolConfig",
     "PooledTab",
+    "Selector",
+    "safe_url",
+    "strip_tags",
 ]
 
 

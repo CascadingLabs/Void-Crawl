@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [
  "click>=8.3.2",
+ "httpx>=0.28.1",
  "pydantic>=2",
  "rich>=14.3.3",
 ]
