@@ -98,7 +98,7 @@ jobs:
           - runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             manylinux: auto
-            docker-options: "-e CFLAGS_aarch64_unknown_linux_gnu=-march=armv8-a"
+            docker-options: -e "CFLAGS_aarch64_unknown_linux_gnu=-march=armv8-a -D__ARM_ARCH=8"
 
           # macOS x86_64
           - runner: macos-15-intel
