@@ -970,8 +970,8 @@ wheels = [
 ]
 
 [[package]]
-name = "void-crawl"
-version = "0.1.5"
+name = "voidcrawl"
+version = "0.1.6"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
