@@ -84,11 +84,31 @@ class BrowserConfig(BaseModel):
         extra_args: Additional command-line flags forwarded to Chrome.
         ws_url: Connect to an **already-running** Chrome instance via its
             WebSocket debugger URL instead of launching a new one.
+        debug: Wrap pages in an interactive step-debugger.  When ``True``,
+            :meth:`BrowserSession.new_page` returns a
+            :class:`~voidcrawl.debug.DebugPage` and
+            :meth:`~voidcrawl.actions.Flow.run` automatically pauses before
+            each action.  Requires the ``debug`` extra
+            (``uv add 'voidcrawl[debug]'``). Defaults to ``False``.
+        stepping: Pause before every action when ``debug=True``.
+            Set to ``False`` to run freely without stopping.
+            Defaults to ``True``.
+        highlight: Flash a red CSS outline on targeted elements when
+            ``debug=True``. Defaults to ``True``.
+        step_delay: Seconds to wait between actions in non-stepping mode
+            when ``debug=True``. Defaults to ``0.3``.
 
     Example:
         >>> cfg = BrowserConfig(headless=False, stealth=True)
         >>> async with BrowserSession(cfg) as browser:
         ...     page = await browser.new_page("https://example.com")
+
+        Enable the step debugger::
+
+            cfg = BrowserConfig(headless=False, debug=True)
+            async with BrowserSession(cfg) as browser:
+                page = await browser.new_page("https://example.com")
+                result = await Flow([ClickElement("#btn"), GetText("h1")]).run(page)
     """
 
     headless: bool = True
@@ -98,6 +118,10 @@ class BrowserConfig(BaseModel):
     chrome_executable: str | None = None
     extra_args: list[str] = Field(default_factory=list)
     ws_url: str | None = None
+    debug: bool = False
+    stepping: bool = True
+    highlight: bool = True
+    step_delay: float = 0.3
 
 
 class PoolConfig(BaseModel):
@@ -245,15 +269,34 @@ class BrowserSession:
     async def new_page(self, url: str) -> Page:
         """Open a new tab and navigate to *url*.
 
+        When :attr:`BrowserConfig.debug` is ``True``, returns a
+        :class:`~voidcrawl.debug.DebugPage` wrapper that automatically
+        triggers interactive step-debugging when passed to
+        :meth:`~voidcrawl.actions.Flow.run`.
+
         Args:
             url: The URL to load in the new tab.
 
         Returns:
-            The new tab handle.
+            The new tab handle (or a debug wrapper when ``debug=True``).
         """
         if self._inner is None:
             raise RuntimeError("BrowserSession not started — use async with")
-        return await self._inner.new_page(url)
+        page = await self._inner.new_page(url)
+        if self._config.debug:
+            from voidcrawl.debug import (  # noqa: PLC0415
+                DebugPage,
+            )
+
+            bc = self._config
+            return DebugPage(  # type: ignore[return-value]
+                page,
+                start_url=url,
+                stepping=bc.stepping,
+                highlight=bc.highlight,
+                step_delay=bc.step_delay,
+            )
+        return page
 
     async def version(self) -> str:
         """Return the browser version string (e.g. ``"Chrome/126.0.6478.126"``).

@@ -90,12 +90,20 @@ class Flow:
     async def run(self, tab: Tab) -> FlowResult:
         """Execute all actions sequentially against *tab*.
 
+        When *tab* is a :class:`~voidcrawl.debug.DebugPage` (i.e. the
+        session was started with ``BrowserConfig(debug=True)``), execution
+        is automatically routed through an interactive
+        :class:`~voidcrawl.debug.DebugSession` instead of running silently.
+
         Args:
             tab: Any object satisfying the ``Tab`` protocol.
 
         Returns:
             One result per action.
         """
+        _debug_hook = getattr(tab, "_run_debug_flow", None)
+        if _debug_hook is not None:
+            return await _debug_hook(self)  # type: ignore[no-any-return]
         results: list[object] = []
         for action in self._actions:
             result = await action.run(tab)

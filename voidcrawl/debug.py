@@ -1,38 +1,20 @@
 """Interactive step debugger for voidcrawl actions.
 
-Provides :class:`DebugSession` for stepping through actions with
-breakpoints, history inspection, and back/forward navigation.
-Use :func:`vc_breakpoint` to mark action classes that should
-automatically pause execution.
+Enable debugging via :class:`~voidcrawl.BrowserConfig`::
 
-Example:
-    Minimal usage::
+    async with BrowserSession(BrowserConfig(headless=False, debug=True)) as browser:
+        page = await browser.new_page(url)
+        result = await Flow([ClickElement("#btn"), GetText("h1")]).run(page)
 
-        from voidcrawl.debug import DebugSession
-
-        async with BrowserSession(BrowserConfig(headless=False)) as browser:
-            page = await browser.new_page(url)
-            dbg = DebugSession(page, start_url=url)
-            dbg.add(SetInputValue("#name", "World"))
-            dbg.add(ClickElement("#greet"))
-            dbg.add(GetText("#title"))
-            await dbg.start()
-
-    With breakpoints::
-
-        @vc_breakpoint
-        class MyClick(JsActionNode): ...
-
-
-        dbg = DebugSession(page, start_url=url, stepping=False)
-        dbg.add(MyClick("#btn"))  # will pause here
-        await dbg.start()
+:class:`DebugPage` is the public type returned by
+:meth:`~voidcrawl.BrowserSession.new_page` when ``debug=True``.
+:class:`DebugSession` and :func:`vc_breakpoint` are internal.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:
     import click
@@ -47,17 +29,120 @@ except ImportError as _err:
 from voidcrawl.actions._flow import FlowResult
 
 if TYPE_CHECKING:
+    from voidcrawl._ext import Page
     from voidcrawl.actions._base import ActionNode
     from voidcrawl.actions._flow import Flow
     from voidcrawl.actions._protocol import Tab
 
 __all__ = [
-    "DebugSession",
-    "vc_breakpoint",
+    "DebugPage",
 ]
 
 _BREAKPOINT_ATTR = "_vc_breakpoint"
 _console = Console()
+
+
+class DebugPage:
+    """Transparent :class:`~voidcrawl._ext.Page` wrapper that enables debug stepping.
+
+    Returned by :meth:`~voidcrawl.BrowserSession.new_page` when
+    :attr:`~voidcrawl.BrowserConfig.debug` is ``True``.  Satisfies the
+    :class:`~voidcrawl.actions.Tab` protocol so it works anywhere a plain
+    ``Page`` does.  When passed to :meth:`~voidcrawl.actions.Flow.run`, the
+    flow automatically pauses before each action with an interactive prompt.
+
+    Non-protocol methods (``goto``, ``content``, ``screenshot_png``, etc.)
+    are transparently proxied to the wrapped page via ``__getattr__``.
+
+    Configure behaviour via :class:`~voidcrawl.BrowserConfig` — the
+    ``stepping``, ``highlight``, and ``step_delay`` fields map directly to
+    the corresponding options here.
+
+    Args:
+        page: The underlying page to wrap.
+        start_url: Starting URL — enables the ``b`` (back) and ``r``
+            (restart) debugger commands.
+        stepping: Pause before every action. Defaults to ``True``.
+        highlight: Flash a red CSS outline on targeted elements.
+            Defaults to ``True``.
+        step_delay: Seconds to wait between actions when not paused.
+            Defaults to ``0.3``.
+
+    Example:
+        >>> cfg = BrowserConfig(headless=False, debug=True)
+        >>> async with BrowserSession(cfg) as browser:
+        ...     page = await browser.new_page("https://example.com")
+        ...     result = await Flow([ClickElement("a"), GetText("h1")]).run(page)
+    """
+
+    def __init__(
+        self,
+        page: Page,
+        *,
+        start_url: str | None = None,
+        stepping: bool = True,
+        highlight: bool = True,
+        step_delay: float = 0.3,
+    ) -> None:
+        self._page = page
+        self._start_url = start_url
+        self._stepping = stepping
+        self._highlight = highlight
+        self._step_delay = step_delay
+
+    def __getattr__(self, name: str) -> Any:
+        # Proxy non-protocol page methods (goto, content, screenshot_png, etc.)
+        return getattr(self._page, name)
+
+    # ── Tab protocol — explicit so runtime isinstance checks work ────────
+
+    async def evaluate_js(self, expression: str) -> object:
+        """Evaluate *expression* in the page and return the result."""
+        return await self._page.evaluate_js(expression)
+
+    async def dispatch_mouse_event(
+        self,
+        event_type: str,
+        x: float,
+        y: float,
+        button: str = "left",
+        click_count: int = 1,
+        delta_x: float | None = None,
+        delta_y: float | None = None,
+        modifiers: int | None = None,
+    ) -> None:
+        """Proxy CDP ``Input.dispatchMouseEvent`` to the wrapped page."""
+        await self._page.dispatch_mouse_event(
+            event_type, x, y, button, click_count, delta_x, delta_y, modifiers
+        )
+
+    async def dispatch_key_event(
+        self,
+        event_type: str,
+        key: str | None = None,
+        code: str | None = None,
+        text: str | None = None,
+        modifiers: int | None = None,
+    ) -> None:
+        """Proxy CDP ``Input.dispatchKeyEvent`` to the wrapped page."""
+        await self._page.dispatch_key_event(event_type, key, code, text, modifiers)
+
+    # ── Flow.run() hook ──────────────────────────────────────────────────
+
+    async def _run_debug_flow(self, flow: Flow) -> FlowResult:
+        """Run *flow* through an interactive :class:`DebugSession`."""
+        dbg = DebugSession(
+            self,
+            start_url=self._start_url,
+            stepping=self._stepping,
+            highlight=self._highlight,
+            step_delay=self._step_delay,
+        )
+        dbg.add_flow(flow)
+        return await dbg.start()
+
+    def __repr__(self) -> str:
+        return f"DebugPage(stepping={self._stepping}, highlight={self._highlight})"
 
 
 def vc_breakpoint(cls: type) -> type:

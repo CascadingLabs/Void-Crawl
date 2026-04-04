@@ -79,6 +79,10 @@ class BrowserConfig:
     chrome_executable: str | None
     extra_args: list[str]
     ws_url: str | None
+    debug: bool
+    stepping: bool
+    highlight: bool
+    step_delay: float
 
     def __init__(
         self,
@@ -90,6 +94,10 @@ class BrowserConfig:
         chrome_executable: str | None = None,
         extra_args: list[str] = ...,
         ws_url: str | None = None,
+        debug: bool = False,
+        stepping: bool = True,
+        highlight: bool = True,
+        step_delay: float = 0.3,
     ) -> None: ...
     def model_dump(self) -> dict[str, object]: ...
 
