@@ -39,13 +39,11 @@ async def main() -> None:
     async with BrowserSession(BrowserConfig(stealth=True)) as browser:
         page = await browser.new_page("https://example.com")
         await check_fingerprint("stealth=True", page)
-        await page.close()
 
     # Stealth OFF
     async with BrowserSession(BrowserConfig(stealth=False)) as browser:
         page = await browser.new_page("https://example.com")
         await check_fingerprint("stealth=False", page)
-        await page.close()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,113 @@
+"""Type stubs for the voidcrawl top-level package."""
+
+from __future__ import annotations
+
+from voidcrawl._ext import (
+    Page as Page,
+)
+from voidcrawl._ext import (
+    PooledTab as PooledTab,
+)
+from voidcrawl._ext import (
+    _AcquireContext as _AcquireContext,
+)
+from voidcrawl.contracts import (
+    Attr as Attr,
+)
+from voidcrawl.contracts import (
+    Contract as Contract,
+)
+from voidcrawl.contracts import (
+    Selector as Selector,
+)
+from voidcrawl.contracts import (
+    safe_url as safe_url,
+)
+from voidcrawl.contracts import (
+    strip_tags as strip_tags,
+)
+
+__all__ = [
+    "Attr",
+    "BrowserConfig",
+    "BrowserPool",
+    "BrowserSession",
+    "Contract",
+    "Page",
+    "PoolConfig",
+    "PooledTab",
+    "Selector",
+    "safe_url",
+    "strip_tags",
+]
+
+class BrowserConfig:
+    """Configuration for launching or connecting to a single browser instance."""
+
+    headless: bool
+    stealth: bool
+    no_sandbox: bool
+    proxy: str | None
+    chrome_executable: str | None
+    extra_args: list[str]
+    ws_url: str | None
+
+    def __init__(
+        self,
+        *,
+        headless: bool = True,
+        stealth: bool = True,
+        no_sandbox: bool = False,
+        proxy: str | None = None,
+        chrome_executable: str | None = None,
+        extra_args: list[str] = ...,
+        ws_url: str | None = None,
+    ) -> None: ...
+    def model_dump(self) -> dict[str, object]: ...
+
+class PoolConfig:
+    """Configuration for a pool of reusable browser tabs."""
+
+    browsers: int
+    tabs_per_browser: int
+    tab_max_uses: int
+    tab_max_idle_secs: int
+    chrome_ws_urls: list[str]
+    browser: BrowserConfig
+
+    def __init__(
+        self,
+        *,
+        browsers: int = 1,
+        tabs_per_browser: int = 4,
+        tab_max_uses: int = 50,
+        tab_max_idle_secs: int = 60,
+        chrome_ws_urls: list[str] = ...,
+        browser: BrowserConfig = ...,
+    ) -> None: ...
+    @classmethod
+    def from_env(cls) -> PoolConfig: ...
+    def model_dump(self) -> dict[str, object]: ...
+
+class BrowserSession:
+    """Async context manager wrapping a single Chromium instance via CDP."""
+
+    def __init__(self, config: BrowserConfig | None = None) -> None: ...
+    async def __aenter__(self) -> BrowserSession: ...
+    async def __aexit__(
+        self, exc_type: object, exc_val: object, exc_tb: object
+    ) -> bool: ...
+    async def new_page(self, url: str) -> Page: ...
+    async def version(self) -> str: ...
+    async def close(self) -> None: ...
+
+class BrowserPool:
+    """Pool of reusable browser tabs across one or more Chrome processes."""
+
+    def __init__(self, config: PoolConfig) -> None: ...
+    async def __aenter__(self) -> BrowserPool: ...
+    async def __aexit__(
+        self, exc_type: object, exc_val: object, exc_tb: object
+    ) -> bool: ...
+    def acquire(self) -> _AcquireContext: ...
+    async def warmup(self) -> None: ...

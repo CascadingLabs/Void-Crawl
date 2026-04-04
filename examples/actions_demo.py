@@ -26,9 +26,10 @@ TARGET_URL = "https://qscrape.dev/l2/news"
 async def main() -> None:
     async with BrowserSession(BrowserConfig(headless=True)) as browser:
         page = await browser.new_page(TARGET_URL)
-        await page.wait_for_network_idle(timeout=15.0)
+        await page.wait_for_network_idle()
         articles: list[Article] = await QueryAll(".hn-feed-item", Article).run(page)
-        await page.close()
+
+        # --- Printing the output ---
 
         print(f"Found {len(articles)} article(s):\n")
         for i, a in enumerate(articles, 1):

@@ -21,7 +21,6 @@ async def main() -> None:
     ) as browser:
         page = await browser.new_page("https://example.com")
         print(f"Title: {await page.title()}")
-        await page.close()
 
 
 if __name__ == "__main__":

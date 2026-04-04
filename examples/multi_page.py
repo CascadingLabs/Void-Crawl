@@ -19,8 +19,6 @@ async def main() -> None:
             title = await page.title()
             url = await page.url()
             print(f"  {url}  ->  {title}")
-        for page in pages:
-            await page.close()
 
 
 if __name__ == "__main__":

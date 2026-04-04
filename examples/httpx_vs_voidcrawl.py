@@ -90,8 +90,6 @@ async def scrape_with_voidcrawl() -> None:
                 )
             )
 
-        await page.close()
-
     print()
 
 

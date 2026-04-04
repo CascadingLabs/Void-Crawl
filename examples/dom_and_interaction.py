@@ -43,8 +43,6 @@ async def main() -> None:
         missing = await page.query_selector("#does-not-exist")
         print(f"Missing element: {missing}")
 
-        await page.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

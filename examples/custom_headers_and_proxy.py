@@ -21,7 +21,6 @@ async def custom_headers() -> None:
         content = await page.content()
         print("Response with custom headers:")
         print(content[:500])
-        await page.close()
 
 
 async def with_proxy() -> None:
