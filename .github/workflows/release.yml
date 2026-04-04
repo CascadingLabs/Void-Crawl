@@ -6,8 +6,8 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write  # for GitHub Release creation
-  id-token: write  # for PyPI trusted publishing
+  contents: write # for GitHub Release creation
+  id-token: write # for PyPI trusted publishing
 
 jobs:
   # ── Rust checks ─────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -98,14 +98,15 @@ jobs:
           - runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             manylinux: auto
+            docker-options: "-e CFLAGS_aarch64_unknown_linux_gnu=-march=armv8-a"
 
           # macOS x86_64
-          - runner: macos-13
+          - runner: macos-15-intel
             target: x86_64-apple-darwin
             manylinux: ""
 
           # macOS Apple Silicon
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64-apple-darwin
             manylinux: ""
 
@@ -129,6 +130,7 @@ jobs:
             --out dist
             --interpreter python3.10 python3.11 python3.12 python3.13
           sccache: "true"
+          docker-options: ${{ matrix.docker-options }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
