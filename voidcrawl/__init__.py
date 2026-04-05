@@ -162,6 +162,9 @@ class PoolConfig(BaseModel):
             Prevents memory leaks in long-running crawls. Defaults to ``50``.
         tab_max_idle_secs: Evict a tab that has been idle longer than this
             many seconds. Defaults to ``60``.
+        acquire_timeout_secs: Maximum seconds to wait in
+            :meth:`~BrowserPool.acquire` when all tabs are checked out.
+            ``0`` means wait indefinitely. Defaults to ``30``.
         chrome_ws_urls: Pre-existing Chrome WebSocket debugger URLs.  When
             non-empty, the pool connects to these instead of launching
             new processes, and *browsers* is ignored.
@@ -183,6 +186,7 @@ class PoolConfig(BaseModel):
     tabs_per_browser: int = 4
     tab_max_uses: int = 50
     tab_max_idle_secs: int = 60
+    acquire_timeout_secs: int = 30
     auto_evict: bool = True
     chrome_ws_urls: list[str] = Field(default_factory=list)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
@@ -319,6 +323,8 @@ class PoolConfig(BaseModel):
         +------------------------+---------------------------------+---------+
         | ``TAB_MAX_IDLE_SECS``  | Idle eviction timeout           | 60      |
         +------------------------+---------------------------------+---------+
+        | ``ACQUIRE_TIMEOUT_SECS``| Max seconds for acquire()      | 30      |
+        +------------------------+---------------------------------+---------+
         | ``CHROME_NO_SANDBOX``  | Set to ``"1"`` to disable       | —       |
         +------------------------+---------------------------------+---------+
         | ``CHROME_HEADLESS``    | Set to ``"0"`` for headful      | 1       |
@@ -357,6 +363,7 @@ class PoolConfig(BaseModel):
             tabs_per_browser=int(os.environ.get("TABS_PER_BROWSER", "4")),
             tab_max_uses=int(os.environ.get("TAB_MAX_USES", "50")),
             tab_max_idle_secs=int(os.environ.get("TAB_MAX_IDLE_SECS", "60")),
+            acquire_timeout_secs=int(os.environ.get("ACQUIRE_TIMEOUT_SECS", "30")),
             auto_evict=os.environ.get("AUTO_EVICT", "1") != "0",
             chrome_ws_urls=chrome_ws_urls,
             browser=BrowserConfig(
@@ -516,6 +523,7 @@ class BrowserPool:
             tabs_per_browser=cfg.tabs_per_browser,
             tab_max_uses=cfg.tab_max_uses,
             tab_max_idle_secs=cfg.tab_max_idle_secs,
+            acquire_timeout_secs=cfg.acquire_timeout_secs,
             auto_evict=cfg.auto_evict,
             headless=bc.headless,
             no_sandbox=bc.no_sandbox,

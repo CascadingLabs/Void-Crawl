@@ -116,6 +116,7 @@ class PoolConfig:
     tabs_per_browser: int
     tab_max_uses: int
     tab_max_idle_secs: int
+    acquire_timeout_secs: int
     auto_evict: bool
     chrome_ws_urls: list[str]
     browser: BrowserConfig
@@ -127,6 +128,7 @@ class PoolConfig:
         tabs_per_browser: int = 4,
         tab_max_uses: int = 50,
         tab_max_idle_secs: int = 60,
+        acquire_timeout_secs: int = 30,
         auto_evict: bool = True,
         chrome_ws_urls: list[str] = ...,
         browser: BrowserConfig = ...,

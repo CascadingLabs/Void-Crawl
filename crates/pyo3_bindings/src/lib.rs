@@ -238,29 +238,52 @@ impl PyPage {
 /// The Mutex is held only for microseconds (take/replace), NOT during
 /// the async CDP operation itself. This eliminates lock contention.
 ///
+/// The page is always restored after the operation completes — even on
+/// error — so a failed CDP call never permanently empties the slot.
+///
 /// **Cancellation safety**: If the Python future is cancelled (e.g. by
 /// `asyncio.wait_for` timeout) between the `take()` and `replace()`,
-/// the page is permanently lost — subsequent calls will get
-/// `"page is closed"`. This is acceptable because a cancelled CDP
-/// operation leaves the page in an indeterminate state anyway.
+/// the page is permanently lost.  This is inherent to the
+/// `future_into_py` model — there is no async `Drop` — and is
+/// acceptable because a cancelled CDP operation leaves the page in an
+/// indeterminate state anyway.
 macro_rules! with_page {
     ($self:expr, $py:expr, |$page:ident| $body:expr) => {{
         let inner = Arc::clone(&$self.inner);
         future_into_py($py, async move {
-            // Take page out — µs lock hold
             let page = inner
                 .lock()
                 .await
                 .take()
                 .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            // Work without holding the lock
             let result = {
                 let $page = &page;
                 $body.await.map_err(to_py_err)
             };
-            // Put page back — µs lock hold
             inner.lock().await.replace(page);
             result
+        })
+    }};
+}
+
+/// Variant of `with_page!` that allows a custom transformation on the
+/// result before returning.  The page is always restored.
+macro_rules! with_page_map {
+    ($self:expr, $py:expr, |$page:ident| $body:expr, |$res:ident| $map:expr) => {{
+        let inner = Arc::clone(&$self.inner);
+        future_into_py($py, async move {
+            let page = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
+            let result = {
+                let $page = &page;
+                $body.await.map_err(to_py_err)
+            };
+            inner.lock().await.replace(page);
+            let $res = result?;
+            Ok($map)
         })
     }};
 }
@@ -283,21 +306,12 @@ impl PyPage {
     /// flag.
     #[pyo3(signature = (url, timeout=30.0))]
     fn goto<'py>(&self, py: Python<'py>, url: String, timeout: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page
-                .goto_and_wait_for_idle(&url, Duration::from_secs_f64(timeout))
-                .await
-                .map(PyPageResponse::from)
-                .map_err(to_py_err);
-            inner.lock().await.replace(page);
-            result
-        })
+        with_page_map!(
+            self,
+            py,
+            |page| page.goto_and_wait_for_idle(&url, Duration::from_secs_f64(timeout)),
+            |resp| PyPageResponse::from(resp)
+        )
     }
 
     /// Wait for the current navigation to complete.
@@ -326,47 +340,17 @@ impl PyPage {
     /// JSON objects → dict, arrays → list, strings → str, numbers → int/float,
     /// etc.
     fn evaluate_js<'py>(&self, py: Python<'py>, expression: String) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page.evaluate_js(&expression).await.map_err(to_py_err);
-            inner.lock().await.replace(page);
-            Ok(PyJsonValue(result?))
-        })
+        with_page_map!(self, py, |page| page.evaluate_js(&expression), |val| PyJsonValue(val))
     }
 
     /// Take a PNG screenshot, returned as Python bytes.
     fn screenshot_png<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page.screenshot_png().await.map_err(to_py_err);
-            inner.lock().await.replace(page);
-            Ok(PyBytesResult(result?))
-        })
+        with_page_map!(self, py, |page| page.screenshot_png(), |bytes| PyBytesResult(bytes))
     }
 
     /// Generate a PDF, returned as Python bytes.
     fn pdf_bytes<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page.pdf_bytes().await.map_err(to_py_err);
-            inner.lock().await.replace(page);
-            Ok(PyBytesResult(result?))
-        })
+        with_page_map!(self, py, |page| page.pdf_bytes(), |bytes| PyBytesResult(bytes))
     }
 
     /// Query for an element by CSS selector, return its inner HTML or None.
@@ -424,20 +408,11 @@ impl PyPage {
         min_length: usize,
         stable_checks: u32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page
-                .wait_for_stable_dom(Duration::from_secs_f64(timeout), min_length, stable_checks)
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(page);
-            result
-        })
+        with_page!(self, py, |page| page.wait_for_stable_dom(
+            Duration::from_secs_f64(timeout),
+            min_length,
+            stable_checks,
+        ))
     }
 
     /// Event-driven wait for network idle. No polling.
@@ -450,20 +425,7 @@ impl PyPage {
         py: Python<'py>,
         timeout: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page
-                .wait_for_network_idle(Duration::from_secs_f64(timeout))
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(page);
-            result
-        })
+        with_page!(self, py, |page| page.wait_for_network_idle(Duration::from_secs_f64(timeout)))
     }
 
     /// Dispatch a mouse event via the CDP Input.dispatchMouseEvent command.
@@ -483,29 +445,16 @@ impl PyPage {
     ) -> PyResult<Bound<'py, PyAny>> {
         let evt = parse_mouse_event_type(event_type)?;
         let btn = parse_mouse_button(button)?;
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page
-                .dispatch_mouse_event(
-                    evt,
-                    x,
-                    y,
-                    Some(btn),
-                    Some(click_count),
-                    delta_x,
-                    delta_y,
-                    modifiers,
-                )
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(page);
-            result
-        })
+        with_page!(self, py, |page| page.dispatch_mouse_event(
+            evt,
+            x,
+            y,
+            Some(btn),
+            Some(click_count),
+            delta_x,
+            delta_y,
+            modifiers,
+        ))
     }
 
     /// Dispatch a key event via the CDP Input.dispatchKeyEvent command.
@@ -520,26 +469,13 @@ impl PyPage {
         modifiers: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let evt = parse_key_event_type(event_type)?;
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let page = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("page is closed"))?;
-            let result = page
-                .dispatch_key_event(
-                    evt,
-                    key.as_deref(),
-                    code.as_deref(),
-                    text.as_deref(),
-                    modifiers,
-                )
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(page);
-            result
-        })
+        with_page!(self, py, |page| page.dispatch_key_event(
+            evt,
+            key.as_deref(),
+            code.as_deref(),
+            text.as_deref(),
+            modifiers,
+        ))
     }
 
     /// Close this page / tab.
@@ -661,8 +597,6 @@ impl PyBrowserSession {
     fn new_page<'py>(&self, py: Python<'py>, url: String) -> PyResult<Bound<'py, PyAny>> {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
-            // Take session out — µs lock hold — to avoid holding the Mutex
-            // across the multi-second CDP tab-open + navigate operation.
             let session = inner.lock().await.take().ok_or_else(|| {
                 PyRuntimeError::new_err(
                     "browser not launched — use `async with` or call launch() first",
@@ -783,7 +717,8 @@ impl fmt::Debug for PyPooledTab {
 }
 
 /// Helper macro: run an async op on the page inside the pooled tab.
-/// Uses take-work-replace to minimize lock hold time.
+/// Uses take-work-replace to minimize lock hold time. The tab is always
+/// restored after the operation completes.
 macro_rules! with_pooled_page {
     ($self:expr, $py:expr, |$page:ident| $body:expr) => {{
         let inner = Arc::clone(&$self.inner);
@@ -803,6 +738,27 @@ macro_rules! with_pooled_page {
     }};
 }
 
+/// Variant of `with_pooled_page!` with a custom result transformation.
+macro_rules! with_pooled_page_map {
+    ($self:expr, $py:expr, |$page:ident| $body:expr, |$res:ident| $map:expr) => {{
+        let inner = Arc::clone(&$self.inner);
+        future_into_py($py, async move {
+            let tab = inner
+                .lock()
+                .await
+                .take()
+                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
+            let result = {
+                let $page = &tab.page;
+                $body.await.map_err(to_py_err)
+            };
+            inner.lock().await.replace(tab);
+            let $res = result?;
+            Ok($map)
+        })
+    }};
+}
+
 #[pymethods]
 impl PyPooledTab {
     fn navigate<'py>(&self, py: Python<'py>, url: String) -> PyResult<Bound<'py, PyAny>> {
@@ -816,22 +772,12 @@ impl PyPooledTab {
     /// starts.
     #[pyo3(signature = (url, timeout=30.0))]
     fn goto<'py>(&self, py: Python<'py>, url: String, timeout: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab
-                .page
-                .goto_and_wait_for_idle(&url, Duration::from_secs_f64(timeout))
-                .await
-                .map(PyPageResponse::from)
-                .map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            result
-        })
+        with_pooled_page_map!(
+            self,
+            py,
+            |page| page.goto_and_wait_for_idle(&url, Duration::from_secs_f64(timeout)),
+            |resp| PyPageResponse::from(resp)
+        )
     }
 
     fn wait_for_navigation<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -851,31 +797,13 @@ impl PyPooledTab {
     }
 
     fn evaluate_js<'py>(&self, py: Python<'py>, expression: String) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab.page.evaluate_js(&expression).await.map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            Ok(PyJsonValue(result?))
-        })
+        with_pooled_page_map!(self, py, |page| page.evaluate_js(&expression), |val| PyJsonValue(
+            val
+        ))
     }
 
     fn screenshot_png<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab.page.screenshot_png().await.map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            Ok(PyBytesResult(result?))
-        })
+        with_pooled_page_map!(self, py, |page| page.screenshot_png(), |bytes| PyBytesResult(bytes))
     }
 
     fn query_selector<'py>(
@@ -927,21 +855,11 @@ impl PyPooledTab {
         min_length: usize,
         stable_checks: u32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab
-                .page
-                .wait_for_stable_dom(Duration::from_secs_f64(timeout), min_length, stable_checks)
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            result
-        })
+        with_pooled_page!(self, py, |page| page.wait_for_stable_dom(
+            Duration::from_secs_f64(timeout),
+            min_length,
+            stable_checks,
+        ))
     }
 
     /// Event-driven wait for network idle. No polling.
@@ -954,21 +872,8 @@ impl PyPooledTab {
         py: Python<'py>,
         timeout: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab
-                .page
-                .wait_for_network_idle(Duration::from_secs_f64(timeout))
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            result
-        })
+        with_pooled_page!(self, py, |page| page
+            .wait_for_network_idle(Duration::from_secs_f64(timeout)))
     }
 
     /// Dispatch a mouse event via the CDP Input.dispatchMouseEvent command.
@@ -988,30 +893,16 @@ impl PyPooledTab {
     ) -> PyResult<Bound<'py, PyAny>> {
         let evt = parse_mouse_event_type(event_type)?;
         let btn = parse_mouse_button(button)?;
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab
-                .page
-                .dispatch_mouse_event(
-                    evt,
-                    x,
-                    y,
-                    Some(btn),
-                    Some(click_count),
-                    delta_x,
-                    delta_y,
-                    modifiers,
-                )
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            result
-        })
+        with_pooled_page!(self, py, |page| page.dispatch_mouse_event(
+            evt,
+            x,
+            y,
+            Some(btn),
+            Some(click_count),
+            delta_x,
+            delta_y,
+            modifiers,
+        ))
     }
 
     /// Dispatch a key event via the CDP Input.dispatchKeyEvent command.
@@ -1026,27 +917,13 @@ impl PyPooledTab {
         modifiers: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let evt = parse_key_event_type(event_type)?;
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let tab = inner
-                .lock()
-                .await
-                .take()
-                .ok_or_else(|| PyRuntimeError::new_err("tab has been released"))?;
-            let result = tab
-                .page
-                .dispatch_key_event(
-                    evt,
-                    key.as_deref(),
-                    code.as_deref(),
-                    text.as_deref(),
-                    modifiers,
-                )
-                .await
-                .map_err(to_py_err);
-            inner.lock().await.replace(tab);
-            result
-        })
+        with_pooled_page!(self, py, |page| page.dispatch_key_event(
+            evt,
+            key.as_deref(),
+            code.as_deref(),
+            text.as_deref(),
+            modifiers,
+        ))
     }
 
     fn __repr__(&self) -> String {
@@ -1223,8 +1100,8 @@ impl PyBrowserPool {
     /// public Python API.
     #[classmethod]
     #[pyo3(signature = (
-        browsers, tabs_per_browser, tab_max_uses, tab_max_idle_secs, auto_evict,
-        headless, no_sandbox, stealth, ws_urls, proxy, chrome_executable, extra_args
+        browsers, tabs_per_browser, tab_max_uses, tab_max_idle_secs, acquire_timeout_secs,
+        auto_evict, headless, no_sandbox, stealth, ws_urls, proxy, chrome_executable, extra_args
     ))]
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::fn_params_excessive_bools)]
@@ -1234,6 +1111,7 @@ impl PyBrowserPool {
         tabs_per_browser: usize,
         tab_max_uses: u32,
         tab_max_idle_secs: u64,
+        acquire_timeout_secs: u64,
         auto_evict: bool,
         headless: bool,
         no_sandbox: bool,
@@ -1248,6 +1126,7 @@ impl PyBrowserPool {
             tabs_per_browser,
             tab_max_uses,
             tab_max_idle_secs,
+            acquire_timeout_secs,
             auto_evict,
             headless,
             no_sandbox,
@@ -1316,19 +1195,20 @@ impl PyBrowserPool {
 #[allow(clippy::struct_excessive_bools)]
 #[pyclass(name = "_PoolParamsContext")]
 pub struct PyPoolParamsContext {
-    browsers:          usize,
-    tabs_per_browser:  usize,
-    tab_max_uses:      u32,
-    tab_max_idle_secs: u64,
-    auto_evict:        bool,
-    headless:          bool,
-    no_sandbox:        bool,
-    stealth:           bool,
-    ws_urls:           Vec<String>,
-    proxy:             Option<String>,
-    chrome_executable: Option<String>,
-    extra_args:        Vec<String>,
-    pool_slot:         Arc<Mutex<Option<Arc<BrowserPool>>>>,
+    browsers:             usize,
+    tabs_per_browser:     usize,
+    tab_max_uses:         u32,
+    tab_max_idle_secs:    u64,
+    acquire_timeout_secs: u64,
+    auto_evict:           bool,
+    headless:             bool,
+    no_sandbox:           bool,
+    stealth:              bool,
+    ws_urls:              Vec<String>,
+    proxy:                Option<String>,
+    chrome_executable:    Option<String>,
+    extra_args:           Vec<String>,
+    pool_slot:            Arc<Mutex<Option<Arc<BrowserPool>>>>,
 }
 
 impl fmt::Debug for PyPoolParamsContext {
@@ -1345,6 +1225,7 @@ impl PyPoolParamsContext {
         let tabs_per_browser = this.tabs_per_browser;
         let tab_max_uses = this.tab_max_uses;
         let tab_max_idle_secs = this.tab_max_idle_secs;
+        let acquire_timeout_secs = this.acquire_timeout_secs;
         let auto_evict = this.auto_evict;
         let headless = this.headless;
         let no_sandbox = this.no_sandbox;
@@ -1411,6 +1292,7 @@ impl PyPoolParamsContext {
                 tabs_per_browser,
                 tab_max_uses,
                 tab_max_idle_secs,
+                acquire_timeout_secs,
                 auto_evict,
             };
             let pool = Arc::new(BrowserPool::new(config, sessions));

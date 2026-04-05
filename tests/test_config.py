@@ -75,6 +75,7 @@ class TestPoolConfig:
         assert cfg.tabs_per_browser == 4
         assert cfg.tab_max_uses == 50
         assert cfg.tab_max_idle_secs == 60
+        assert cfg.acquire_timeout_secs == 30
         assert cfg.auto_evict is True
         assert cfg.chrome_ws_urls == []
         assert isinstance(cfg.browser, BrowserConfig)
@@ -86,12 +87,14 @@ class TestPoolConfig:
             tabs_per_browser=10,
             tab_max_uses=100,
             tab_max_idle_secs=120,
+            acquire_timeout_secs=15,
             auto_evict=False,
             chrome_ws_urls=["http://localhost:9222"],
             browser=browser,
         )
         assert cfg.browsers == 3
         assert cfg.tabs_per_browser == 10
+        assert cfg.acquire_timeout_secs == 15
         assert cfg.auto_evict is False
         assert cfg.chrome_ws_urls == ["http://localhost:9222"]
         assert cfg.browser.headless is False
@@ -215,6 +218,7 @@ class TestPoolConfigFromEnv:
         assert cfg.tabs_per_browser == 4
         assert cfg.tab_max_uses == 50
         assert cfg.tab_max_idle_secs == 60
+        assert cfg.acquire_timeout_secs == 30
         assert cfg.auto_evict is True
         assert cfg.chrome_ws_urls == []
 
@@ -254,6 +258,12 @@ class TestPoolConfigFromEnv:
         with patch.dict(os.environ, env, clear=True):
             cfg = PoolConfig.from_env()
         assert cfg.tab_max_idle_secs == 120
+
+    def test_acquire_timeout_secs(self) -> None:
+        env = {"ACQUIRE_TIMEOUT_SECS": "10"}
+        with patch.dict(os.environ, env, clear=True):
+            cfg = PoolConfig.from_env()
+        assert cfg.acquire_timeout_secs == 10
 
     def test_auto_evict_disabled(self) -> None:
         env = {"AUTO_EVICT": "0"}
@@ -313,6 +323,7 @@ class TestPoolConfigFromEnv:
             "TABS_PER_BROWSER": "4",
             "TAB_MAX_USES": "50",
             "TAB_MAX_IDLE_SECS": "60",
+            "ACQUIRE_TIMEOUT_SECS": "30",
             "CHROME_NO_SANDBOX": "1",
         }
         with patch.dict(os.environ, env, clear=True):
@@ -320,6 +331,7 @@ class TestPoolConfigFromEnv:
         assert cfg.browsers == 2
         assert cfg.tabs_per_browser == 4
         assert cfg.tab_max_uses == 50
+        assert cfg.acquire_timeout_secs == 30
         assert cfg.browser.no_sandbox is True
         assert len(cfg.chrome_ws_urls) == 2
 

@@ -1,6 +1,12 @@
 //! `BrowserSession` — the main entry point for controlling a browser.
 
-use std::{fmt, sync::Arc};
+use std::{
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use chromiumoxide::{
     browser::{Browser, BrowserConfig},
@@ -143,6 +149,7 @@ impl BrowserSessionBuilder {
 pub struct BrowserSession {
     browser:        Arc<Mutex<Browser>>,
     _handler_task:  JoinHandle<()>,
+    handler_alive:  Arc<AtomicBool>,
     stealth:        StealthConfig,
     /// Owns the temporary user data directory for launched browsers.
     /// `None` for remote-debug sessions (no local user data dir).
@@ -158,6 +165,20 @@ impl fmt::Debug for BrowserSession {
 }
 
 impl BrowserSession {
+    /// Returns `true` while the CDP handler loop is still running.
+    ///
+    /// When this returns `false`, the browser process has likely crashed or
+    /// the WebSocket connection has been lost — all subsequent CDP calls
+    /// will fail.
+    pub fn is_alive(&self) -> bool {
+        self.handler_alive.load(Ordering::Acquire)
+    }
+
+    /// Check that the handler is still running; return `BrowserClosed` if not.
+    fn check_alive(&self) -> Result<()> {
+        if self.is_alive() { Ok(()) } else { Err(VoidCrawlError::BrowserClosed) }
+    }
+
     /// Create a builder.
     pub fn builder() -> BrowserSessionBuilder {
         BrowserSessionBuilder::new()
@@ -290,11 +311,13 @@ impl BrowserSession {
             }
         };
 
-        let handler_task = spawn_handler(handler);
+        let alive = Arc::new(AtomicBool::new(true));
+        let handler_task = spawn_handler(handler, Arc::clone(&alive));
 
         Ok(Self {
             browser: Arc::new(Mutex::new(browser)),
             _handler_task: handler_task,
+            handler_alive: alive,
             stealth,
             _user_data_dir: owned_user_data_dir,
         })
@@ -306,6 +329,7 @@ impl BrowserSession {
     /// `addScriptToEvaluateOnNewDocument` scripts fire during the real
     /// page load — not after it.
     pub async fn new_page(&self, url: &str) -> Result<Page> {
+        self.check_alive()?;
         let page = {
             let browser = self.browser.lock().await;
             let cdp_page = browser
@@ -322,6 +346,7 @@ impl BrowserSession {
 
     /// Open a blank tab with stealth applied (no navigation).
     pub async fn new_blank_page(&self) -> Result<Page> {
+        self.check_alive()?;
         let page = {
             let browser = self.browser.lock().await;
             let cdp_page = browser
@@ -336,6 +361,7 @@ impl BrowserSession {
 
     /// List all open pages.
     pub async fn pages(&self) -> Result<Vec<Page>> {
+        self.check_alive()?;
         let browser = self.browser.lock().await;
         let cdp_pages =
             browser.pages().await.map_err(|e| VoidCrawlError::PageError(e.to_string()))?;
@@ -344,6 +370,7 @@ impl BrowserSession {
 
     /// Get browser version string.
     pub async fn version(&self) -> Result<String> {
+        self.check_alive()?;
         let browser = self.browser.lock().await;
         let info = browser.version().await.map_err(|e| VoidCrawlError::Other(e.to_string()))?;
         Ok(info.product)
@@ -370,10 +397,14 @@ impl BrowserSession {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /// Spawn the CDP handler loop on a background tokio task.
-fn spawn_handler(mut handler: Handler) -> JoinHandle<()> {
+///
+/// Sets `alive` to `false` when the handler stream ends (browser crash,
+/// WebSocket disconnect, or graceful close).
+fn spawn_handler(mut handler: Handler, alive: Arc<AtomicBool>) -> JoinHandle<()> {
     tokio::spawn(async move {
         use futures::StreamExt;
         while handler.next().await.is_some() {}
+        alive.store(false, Ordering::Release);
     })
 }
 

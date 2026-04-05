@@ -199,11 +199,12 @@ async fn test_pool(config: PoolConfig) -> BrowserPool {
 #[tokio::test]
 async fn test_pool_basic() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  1,
-        tab_max_uses:      50,
-        tab_max_idle_secs: 60,
-        auto_evict:        false,
+        browsers:             1,
+        tabs_per_browser:     1,
+        tab_max_uses:         50,
+        tab_max_idle_secs:    60,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
@@ -227,11 +228,12 @@ async fn test_pool_basic() {
 #[tokio::test]
 async fn test_pool_parallel() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  4,
-        tab_max_uses:      50,
-        tab_max_idle_secs: 60,
-        auto_evict:        false,
+        browsers:             1,
+        tabs_per_browser:     4,
+        tab_max_uses:         50,
+        tab_max_idle_secs:    60,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
@@ -263,11 +265,12 @@ async fn test_pool_parallel() {
 #[tokio::test]
 async fn test_pool_hard_recycle() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  1,
-        tab_max_uses:      2,
-        tab_max_idle_secs: 60,
-        auto_evict:        false,
+        browsers:             1,
+        tabs_per_browser:     1,
+        tab_max_uses:         2,
+        tab_max_idle_secs:    60,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
@@ -293,11 +296,12 @@ async fn test_pool_hard_recycle() {
 #[tokio::test]
 async fn test_pool_idle_eviction() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  1,
-        tab_max_uses:      50,
-        tab_max_idle_secs: 1,
-        auto_evict:        false,
+        browsers:             1,
+        tabs_per_browser:     1,
+        tab_max_uses:         50,
+        tab_max_idle_secs:    1,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
