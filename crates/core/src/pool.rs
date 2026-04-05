@@ -14,7 +14,7 @@ use std::{
     collections::VecDeque,
     env, fmt,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc, Mutex as StdMutex, PoisonError,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
@@ -510,7 +510,7 @@ impl BrowserPool {
     pub fn start_eviction_task(self: Arc<Self>) {
         // Recover from a poisoned mutex: if a previous panic occurred while
         // holding this lock, the inner value is still usable.
-        let mut slot = self.eviction_task.lock().unwrap_or_else(|e| e.into_inner());
+        let mut slot = self.eviction_task.lock().unwrap_or_else(PoisonError::into_inner);
         if slot.is_some() {
             return; // Already running — ignore duplicate call.
         }
@@ -531,7 +531,7 @@ impl BrowserPool {
     ///
     /// Called automatically by [`close`](Self::close).
     pub fn stop_eviction_task(&self) {
-        let mut slot = self.eviction_task.lock().unwrap_or_else(|e| e.into_inner());
+        let mut slot = self.eviction_task.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(task) = slot.take() {
             task.abort();
         }
