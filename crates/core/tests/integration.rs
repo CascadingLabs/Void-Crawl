@@ -199,10 +199,12 @@ async fn test_pool(config: PoolConfig) -> BrowserPool {
 #[tokio::test]
 async fn test_pool_basic() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  1,
-        tab_max_uses:      50,
-        tab_max_idle_secs: 60,
+        browsers:             1,
+        tabs_per_browser:     1,
+        tab_max_uses:         50,
+        tab_max_idle_secs:    60,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
@@ -213,12 +215,12 @@ async fn test_pool_basic() {
     tab.page.navigate("https://example.com").await.expect("navigate failed");
     let html = tab.page.content().await.expect("content failed");
     assert!(html.contains("Example Domain"));
-    pool.release(tab).await.expect("release failed");
+    pool.release(tab).await; // infallible
 
     // Second acquire — should get a recycled tab with use_count == 1
     let tab2 = pool.acquire().await.expect("second acquire failed");
     assert_eq!(tab2.use_count, 1);
-    pool.release(tab2).await.expect("second release failed");
+    pool.release(tab2).await; // infallible
 
     pool.close().await.expect("pool close failed");
 }
@@ -226,10 +228,12 @@ async fn test_pool_basic() {
 #[tokio::test]
 async fn test_pool_parallel() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  4,
-        tab_max_uses:      50,
-        tab_max_idle_secs: 60,
+        browsers:             1,
+        tabs_per_browser:     4,
+        tab_max_uses:         50,
+        tab_max_idle_secs:    60,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
@@ -250,10 +254,10 @@ async fn test_pool_parallel() {
     }
 
     // Release all
-    pool.release(t1).await.expect("release 1");
-    pool.release(t2).await.expect("release 2");
-    pool.release(t3).await.expect("release 3");
-    pool.release(t4).await.expect("release 4");
+    pool.release(t1).await; // infallible
+    pool.release(t2).await; // infallible
+    pool.release(t3).await; // infallible
+    pool.release(t4).await; // infallible
 
     pool.close().await.expect("pool close failed");
 }
@@ -261,10 +265,12 @@ async fn test_pool_parallel() {
 #[tokio::test]
 async fn test_pool_hard_recycle() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  1,
-        tab_max_uses:      2,
-        tab_max_idle_secs: 60,
+        browsers:             1,
+        tabs_per_browser:     1,
+        tab_max_uses:         2,
+        tab_max_idle_secs:    60,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
@@ -272,17 +278,17 @@ async fn test_pool_hard_recycle() {
     // Use 1
     let tab = pool.acquire().await.expect("acquire 1");
     assert_eq!(tab.use_count, 0);
-    pool.release(tab).await.expect("release 1");
+    pool.release(tab).await; // infallible
 
     // Use 2
     let tab = pool.acquire().await.expect("acquire 2");
     assert_eq!(tab.use_count, 1);
-    pool.release(tab).await.expect("release 2");
+    pool.release(tab).await; // infallible
 
     // Use 3 — should trigger hard recycle (use_count was 2, >= tab_max_uses)
     let tab = pool.acquire().await.expect("acquire 3");
     assert_eq!(tab.use_count, 0, "tab should have been hard-recycled");
-    pool.release(tab).await.expect("release 3");
+    pool.release(tab).await; // infallible
 
     pool.close().await.expect("pool close failed");
 }
@@ -290,17 +296,19 @@ async fn test_pool_hard_recycle() {
 #[tokio::test]
 async fn test_pool_idle_eviction() {
     let config = PoolConfig {
-        browsers:          1,
-        tabs_per_browser:  1,
-        tab_max_uses:      50,
-        tab_max_idle_secs: 1,
+        browsers:             1,
+        tabs_per_browser:     1,
+        tab_max_uses:         50,
+        tab_max_idle_secs:    1,
+        acquire_timeout_secs: 30,
+        auto_evict:           false,
     };
     let pool = test_pool(config).await;
     pool.warmup().await.expect("warmup failed");
 
     // Acquire, use, release
     let tab = pool.acquire().await.expect("acquire");
-    pool.release(tab).await.expect("release");
+    pool.release(tab).await; // infallible
 
     // Wait for idle timeout
     time::sleep(Duration::from_secs(2)).await;
@@ -311,7 +319,7 @@ async fn test_pool_idle_eviction() {
     // Acquire again — should get a fresh tab (use_count reset)
     let tab = pool.acquire().await.expect("acquire after eviction");
     assert_eq!(tab.use_count, 0, "evicted tab should be fresh");
-    pool.release(tab).await.expect("release after eviction");
+    pool.release(tab).await; // infallible
 
     pool.close().await.expect("pool close failed");
 }

@@ -2,13 +2,18 @@
 
 import asyncio
 
-from void_crawl import BrowserPool, PoolConfig
+from voidcrawl import BrowserPool, PoolConfig
+
+TARGET_URL = "https://qscrape.dev/l2/news"
 
 
 async def main() -> None:
-    """Launch a headless browser, visit example.com, and print page info."""
+    """Launch a headless browser, visit the Mountainhome Herald, and print page info."""
     async with BrowserPool(PoolConfig()) as pool, pool.acquire() as tab:
-        await tab.navigate("https://example.com")
+        # goto() combines navigate + wait_for_network_idle in one call —
+        # required for JS-rendered pages like qscrape.dev/l2/*.
+        await tab.goto(TARGET_URL)
+
         title = await tab.title()
         url = await tab.url()
         html = await tab.content()

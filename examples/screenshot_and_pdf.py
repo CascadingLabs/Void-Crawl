@@ -1,27 +1,29 @@
-"""Capture screenshots (PNG) and PDF exports of a page."""
+"""Capture screenshots (PNG) of a JS-rendered page."""
 
 import asyncio
 from pathlib import Path
 
-from void_crawl import BrowserPool, PoolConfig
+from voidcrawl import BrowserPool, PoolConfig
 
 OUTPUT_DIR = Path("output")
+TARGET_URL = "https://qscrape.dev/l2/eshop"
 
 
 async def _capture() -> None:
-    """Open example.com and save a PNG screenshot and PDF export."""
+    """Open VaultMart and save a PNG screenshot after the page fully hydrates."""
     async with BrowserPool(PoolConfig()) as pool, pool.acquire() as tab:
-        await tab.navigate("https://example.com")
+        # goto() waits for network idle — essential for Astro client:only islands.
+        await tab.goto(TARGET_URL)
 
         # PNG screenshot
         png_bytes = await tab.screenshot_png()
-        png_path = OUTPUT_DIR / "example.png"
+        png_path = OUTPUT_DIR / "vaultmart.png"
         png_path.write_bytes(png_bytes)
         print(f"Screenshot saved: {png_path} ({len(png_bytes)} bytes)")
 
 
 def main() -> None:
-    """Capture a PNG screenshot of example.com."""
+    """Capture a PNG screenshot of qscrape.dev/l2/eshop (VaultMart)."""
     OUTPUT_DIR.mkdir(exist_ok=True)
     asyncio.run(_capture())
 

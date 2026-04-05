@@ -16,7 +16,7 @@ class JsTab(Protocol):
 
     Any object with an async ``evaluate_js`` method satisfies this
     protocol — including :class:`Page`, :class:`PooledTab`, and test
-    mocks.  Used by :class:`~void_crawl.actions.JsActionNode`.
+    mocks.  Used by :class:`~voidcrawl.actions.JsActionNode`.
     """
 
     async def evaluate_js(self, expression: str) -> object:
@@ -36,7 +36,7 @@ class Tab(JsTab, Protocol):
     """Full protocol covering JS evaluation **and** CDP input commands.
 
     Both :class:`Page` and :class:`PooledTab` satisfy this protocol.
-    CDP-level actions (e.g. :class:`~void_crawl.actions.CdpClick`) require
+    CDP-level actions (e.g. :class:`~voidcrawl.actions.CdpClick`) require
     this protocol rather than the simpler :class:`JsTab`.
     """
 

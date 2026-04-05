@@ -14,17 +14,21 @@ use std::{
     collections::VecDeque,
     env, fmt,
     sync::{
-        Arc,
+        Arc, Mutex as StdMutex, PoisonError,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
 
 use futures::future;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::{
+    sync::{Mutex, Semaphore},
+    task::JoinHandle,
+    time::{sleep, timeout},
+};
 
 use crate::{
-    error::{Result, YosoiError},
+    error::{Result, VoidCrawlError},
     page::Page,
     session::BrowserSession,
 };
@@ -33,22 +37,39 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
     /// Number of Chrome processes (sessions) in the pool.
-    pub browsers:          usize,
+    pub browsers:             usize,
     /// Maximum concurrent tabs per browser session.
-    pub tabs_per_browser:  usize,
+    pub tabs_per_browser:     usize,
     /// Close and reopen a tab after this many uses.
-    pub tab_max_uses:      u32,
+    pub tab_max_uses:         u32,
     /// Evict idle tabs after this many seconds.
-    pub tab_max_idle_secs: u64,
+    pub tab_max_idle_secs:    u64,
+    /// Maximum seconds to wait for a tab in [`BrowserPool::acquire()`].
+    ///
+    /// When all tabs are checked out, `acquire()` blocks on the semaphore
+    /// for at most this many seconds before returning
+    /// [`VoidCrawlError::Timeout`].  `0` means wait indefinitely (the
+    /// pre-v0.2 behaviour).
+    pub acquire_timeout_secs: u64,
+    /// Automatically run idle eviction in a background task.
+    ///
+    /// When `true` (the default), calling
+    /// [`BrowserPool::spawn_eviction_task`] will start a Tokio task that
+    /// calls [`BrowserPool::evict_idle`] every `tab_max_idle_secs / 2`
+    /// seconds.  The task is cancelled when the handle returned by
+    /// `spawn_eviction_task` is aborted (typically on pool close).
+    pub auto_evict:           bool,
 }
 
 impl Default for PoolConfig {
     fn default() -> Self {
         Self {
-            browsers:          1,
-            tabs_per_browser:  4,
-            tab_max_uses:      50,
-            tab_max_idle_secs: 60,
+            browsers:             1,
+            tabs_per_browser:     4,
+            tab_max_uses:         50,
+            tab_max_idle_secs:    60,
+            acquire_timeout_secs: 30,
+            auto_evict:           true,
         }
     }
 }
@@ -98,19 +119,22 @@ impl fmt::Debug for PooledTab {
 /// let tab = pool.acquire().await?;
 /// tab.page.navigate("https://example.com").await?;
 /// let html = tab.page.content().await?;
-/// pool.release(tab).await?;
+/// pool.release(tab).await;
 ///
 /// pool.close().await?;
 /// # Ok(())
 /// # }
 /// ```
 pub struct BrowserPool {
-    sessions:     Vec<BrowserSession>,
-    ready:        Mutex<VecDeque<PooledTab>>,
-    semaphore:    Arc<Semaphore>,
-    config:       PoolConfig,
+    sessions:      Vec<BrowserSession>,
+    ready:         Mutex<VecDeque<PooledTab>>,
+    semaphore:     Arc<Semaphore>,
+    config:        PoolConfig,
     /// Round-robin counter for distributing new tabs across sessions.
-    next_session: AtomicUsize,
+    next_session:  AtomicUsize,
+    /// Background eviction task handle.  `StdMutex` (not tokio) because we
+    /// only set/take the handle in sync contexts — no `.await` inside the lock.
+    eviction_task: StdMutex<Option<JoinHandle<()>>>,
 }
 
 impl fmt::Debug for BrowserPool {
@@ -137,6 +161,7 @@ impl BrowserPool {
             semaphore: Arc::new(Semaphore::new(total_tabs)),
             config,
             next_session: AtomicUsize::new(0),
+            eviction_task: StdMutex::new(None),
         }
     }
 
@@ -151,6 +176,7 @@ impl BrowserPool {
     /// | `TAB_MAX_IDLE_SECS` | Idle eviction timeout | `60` |
     /// | `CHROME_NO_SANDBOX` | Set to `"1"` to pass `--no-sandbox` | — |
     /// | `CHROME_HEADLESS` | Set to `"0"` for headful mode | `1` |
+    /// | `ACQUIRE_TIMEOUT_SECS` | Max seconds to wait in acquire() | `30` |
     /// | `VIEWPORT_WIDTH` | Stealth viewport width | `1920` |
     /// | `VIEWPORT_HEIGHT` | Stealth viewport height | `1080` |
     pub async fn from_env() -> Result<Self> {
@@ -160,6 +186,8 @@ impl BrowserPool {
             env::var("TAB_MAX_USES").ok().and_then(|v| v.parse().ok()).unwrap_or(50);
         let tab_max_idle_secs: u64 =
             env::var("TAB_MAX_IDLE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(60);
+        let acquire_timeout_secs: u64 =
+            env::var("ACQUIRE_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
         let no_sandbox = env::var("CHROME_NO_SANDBOX").ok().is_some_and(|v| v == "1");
         let headless = env::var("CHROME_HEADLESS").ok().is_none_or(|v| v != "0");
         let viewport_width: Option<u32> =
@@ -177,7 +205,7 @@ impl BrowserPool {
                 .collect();
 
             if futs.is_empty() {
-                return Err(YosoiError::Other(
+                return Err(VoidCrawlError::Other(
                     "CHROME_WS_URLS is set but contains no valid URLs".into(),
                 ));
             }
@@ -219,6 +247,8 @@ impl BrowserPool {
             tabs_per_browser,
             tab_max_uses,
             tab_max_idle_secs,
+            acquire_timeout_secs,
+            auto_evict: true,
         };
 
         Ok(Self::new(config, sessions))
@@ -241,9 +271,9 @@ impl BrowserPool {
 
     /// Optionally pre-open tabs across all sessions and fill the ready queue.
     ///
-    /// Tabs are created **in parallel** across sessions, then inserted
-    /// into the ready queue. Semaphore permits are consumed and re-added
-    /// one-by-one so a partial failure leaves the semaphore consistent.
+    /// Tabs are created **in parallel** across sessions, then inserted into
+    /// the ready queue. Successful tabs are kept even when some fail; the
+    /// first error (if any) is returned after all successful tabs are stored.
     ///
     /// This is **optional** — if not called, tabs are created lazily on
     /// first [`acquire()`](Self::acquire).
@@ -254,7 +284,7 @@ impl BrowserPool {
             for _ in 0..self.config.tabs_per_browser {
                 futs.push(async move {
                     let page = session.new_blank_page().await?;
-                    Ok::<_, YosoiError>(PooledTab {
+                    Ok::<_, VoidCrawlError>(PooledTab {
                         page,
                         use_count: 0,
                         last_used: Instant::now(),
@@ -267,41 +297,27 @@ impl BrowserPool {
         // Create all tabs in parallel
         let results = future::join_all(futs).await;
 
-        // Insert successful tabs one-by-one. Each tab consumes a permit
-        // (marking the slot as "occupied") then immediately gets it back
-        // (marking it as "available in the ready queue"). If a tab failed,
-        // we skip it — the permit stays unconsumed and available for lazy
-        // creation later via acquire().
+        // The semaphore tracks checked-out tabs, not ready-queue occupancy.
+        // Tabs in the ready queue are "available" — they hold no permit.
+        // Just push successful tabs directly; failed tabs are skipped and
+        // their capacity remains available for lazy creation via acquire().
         let mut ready = self.ready.lock().await;
-        let mut first_err: Option<YosoiError> = None;
+        let mut first_err: Option<VoidCrawlError> = None;
         for result in results {
             match result {
-                Ok(tab) => {
-                    let permit = self
-                        .semaphore
-                        .acquire()
-                        .await
-                        .map_err(|_| YosoiError::Other("pool semaphore closed".into()))?;
-                    permit.forget();
-                    ready.push_back(tab);
-                    // Immediately re-add: this tab is in the ready queue (available).
-                    self.semaphore.add_permits(1);
-                }
+                Ok(tab) => ready.push_back(tab),
                 Err(e) => {
                     if first_err.is_none() {
                         first_err = Some(e);
                     }
-                    // Skip — the permit stays available for lazy growth.
                 }
             }
         }
 
         // If any tabs failed, report the first error but keep the
         // successfully created tabs in the pool.
-        if let Some(e) = first_err {
-            return Err(e);
-        }
-        Ok(())
+        drop(ready);
+        if let Some(e) = first_err { Err(e) } else { Ok(()) }
     }
 
     /// Check out a tab from the pool.
@@ -315,11 +331,28 @@ impl BrowserPool {
     /// The semaphore permit is returned on every error path so that
     /// failures never permanently shrink pool concurrency.
     pub async fn acquire(&self) -> Result<PooledTab> {
-        let permit = self
-            .semaphore
-            .acquire()
-            .await
-            .map_err(|_| YosoiError::Other("pool semaphore closed".into()))?;
+        let permit = if self.config.acquire_timeout_secs == 0 {
+            // No timeout — wait indefinitely (legacy behaviour).
+            self.semaphore
+                .acquire()
+                .await
+                .map_err(|_| VoidCrawlError::Other("pool semaphore closed".into()))?
+        } else {
+            let deadline = Duration::from_secs(self.config.acquire_timeout_secs);
+            match timeout(deadline, self.semaphore.acquire()).await {
+                Ok(Ok(permit)) => permit,
+                Ok(Err(_)) => {
+                    return Err(VoidCrawlError::Other("pool semaphore closed".into()));
+                }
+                Err(_) => {
+                    return Err(VoidCrawlError::Timeout(format!(
+                        "pool.acquire() timed out after {}s — all {} tabs are checked out",
+                        self.config.acquire_timeout_secs,
+                        self.config.browsers * self.config.tabs_per_browser,
+                    )));
+                }
+            }
+        };
         // Don't auto-return the permit on drop — release() will add it back
         // on the success path. Error paths below must add_permits(1) manually.
         permit.forget();
@@ -373,13 +406,12 @@ impl BrowserPool {
     /// Instant return — no CDP round-trip. The next caller's `navigate(url)`
     /// overwrites prior page content; stealth scripts persist across
     /// navigations.
-    pub async fn release(&self, mut tab: PooledTab) -> Result<()> {
+    pub async fn release(&self, mut tab: PooledTab) {
         tab.use_count += 1;
         tab.last_used = Instant::now();
 
         self.ready.lock().await.push_back(tab);
         self.semaphore.add_permits(1);
-        Ok(())
     }
 
     /// Close idle tabs that have exceeded `tab_max_idle_secs` and open fresh
@@ -407,32 +439,56 @@ impl BrowserPool {
             evict
         };
 
-        // Close evicted tabs and create replacements in parallel
+        // Close evicted tabs and create replacements in parallel.
+        //
+        // If the owning session is dead (handler exited), skip the
+        // replacement — closing the old tab and failing to replace it
+        // would permanently shrink the pool.
         let futs: Vec<_> = to_evict
             .into_iter()
             .map(|tab| {
                 let browser_idx = tab.browser_idx;
                 let session = &self.sessions[browser_idx];
                 async move {
+                    if !session.is_alive() {
+                        // Session is dead — return the old tab unchanged so
+                        // the pool doesn't lose capacity.
+                        return Ok::<_, VoidCrawlError>(tab);
+                    }
                     let _ = tab.page.close().await;
-                    let page = session.new_blank_page().await?;
-                    Ok::<_, YosoiError>(PooledTab {
-                        page,
-                        use_count: 0,
-                        last_used: Instant::now(),
-                        browser_idx,
-                    })
+                    match session.new_blank_page().await {
+                        Ok(page) => Ok(PooledTab {
+                            page,
+                            use_count: 0,
+                            last_used: Instant::now(),
+                            browser_idx,
+                        }),
+                        Err(e) => Err(e),
+                    }
                 }
             })
             .collect();
 
         let results = future::join_all(futs).await;
         let mut ready = self.ready.lock().await;
+        let mut first_err: Option<VoidCrawlError> = None;
         for result in results {
-            ready.push_back(result?);
+            match result {
+                Ok(tab) => ready.push_back(tab),
+                // Replacement failed — the old tab is already closed, so
+                // this slot is lost.  The semaphore still has its permit,
+                // so acquire() can still create a tab on-demand if the
+                // session recovers.
+                Err(e) => {
+                    if first_err.is_none() {
+                        first_err = Some(e);
+                    }
+                }
+            }
         }
-
-        Ok(())
+        // Release the Mutex before returning, then surface the first error.
+        drop(ready);
+        if let Some(e) = first_err { Err(e) } else { Ok(()) }
     }
 
     /// Access the pool configuration.
@@ -440,22 +496,84 @@ impl BrowserPool {
         &self.config
     }
 
+    /// Start a background Tokio task that periodically calls
+    /// [`evict_idle`](Self::evict_idle).
+    ///
+    /// **Idempotent** — if an eviction task is already running, this is a
+    /// no-op.  The handle is stored inside the pool and cancelled
+    /// automatically by [`close`](Self::close).  Call
+    /// [`stop_eviction_task`](Self::stop_eviction_task) to cancel early.
+    ///
+    /// # Panics
+    ///
+    /// Must be called from within a Tokio runtime context.
+    pub fn start_eviction_task(self: Arc<Self>) {
+        // Recover from a poisoned mutex: if a previous panic occurred while
+        // holding this lock, the inner value is still usable.
+        let mut slot = self.eviction_task.lock().unwrap_or_else(PoisonError::into_inner);
+        if slot.is_some() {
+            return; // Already running — ignore duplicate call.
+        }
+        let pool = Arc::clone(&self);
+        let interval = Duration::from_secs((self.config.tab_max_idle_secs / 2).max(1));
+        let handle = tokio::spawn(async move {
+            loop {
+                sleep(interval).await;
+                // Ignore errors — a single eviction failure (e.g. a tab
+                // failing to close) should not kill the background task.
+                let _ = pool.evict_idle().await;
+            }
+        });
+        *slot = Some(handle);
+    }
+
+    /// Stop the background eviction task (if running).
+    ///
+    /// Called automatically by [`close`](Self::close).
+    pub fn stop_eviction_task(&self) {
+        let mut slot = self.eviction_task.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(task) = slot.take() {
+            task.abort();
+        }
+    }
+
     /// Drain all tabs and close all browser sessions.
+    ///
+    /// Returns the first error encountered during tab or session teardown,
+    /// but always attempts to close everything regardless of individual
+    /// failures.
     pub async fn close(&self) -> Result<()> {
+        // Stop the eviction task before closing so it doesn't race with tab
+        // and session teardown.
+        self.stop_eviction_task();
         // Drain the ready queue
         let tabs: Vec<PooledTab> = {
             let mut ready = self.ready.lock().await;
             ready.drain(..).collect()
         };
 
+        let mut first_err: Option<VoidCrawlError> = None;
+
         // Close all tabs in parallel
         let tab_futs: Vec<_> = tabs.into_iter().map(|tab| tab.page.close()).collect();
-        future::join_all(tab_futs).await;
+        for result in future::join_all(tab_futs).await {
+            if let Err(e) = result {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
 
         // Close all browser sessions in parallel
         let session_futs: Vec<_> = self.sessions.iter().map(BrowserSession::close).collect();
-        future::join_all(session_futs).await;
+        for result in future::join_all(session_futs).await {
+            if let Err(e) = result {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
 
-        Ok(())
+        if let Some(e) = first_err { Err(e) } else { Ok(()) }
     }
 }

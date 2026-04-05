@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from void_crawl.actions._base import JsActionNode, inline_js, load_js
+from voidcrawl.actions._base import JsActionNode, inline_js, load_js
 
 _JS_DIR = Path(__file__).parent.parent / "js"
 

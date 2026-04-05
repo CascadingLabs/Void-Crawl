@@ -1,4 +1,4 @@
-"""Generate API reference markdown from the void_crawl public API.
+"""Generate API reference markdown from the voidcrawl public API.
 
 Uses griffe for static analysis -- no need to import the package or build
 the native extension.  Parses Google-style docstrings into structured
@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import griffe
 
@@ -252,34 +252,34 @@ _ACTION_FRAMEWORK = {
 }
 # Everything else from actions.builtin is a "Builtin Action"
 
-_DEBUG_TYPES = {"DebugSession", "vd_breakpoint"}
+_DEBUG_TYPES = {"DebugSession", "vc_breakpoint"}
 
 # Section key → (output filename, page title, description template)
 _SECTION_FILES = {
     "Configuration": (
         "configuration.md",
         "Configuration",
-        "Configuration reference for void_crawl {version}",
+        "Configuration reference for voidcrawl {version}",
     ),
     "Sessions & Pools": (
         "sessions.md",
         "Sessions & Pools",
-        "Session and pool reference for void_crawl {version}",
+        "Session and pool reference for voidcrawl {version}",
     ),
     "Action Framework": (
         "action-framework.md",
         "Action Framework",
-        "Action framework reference for void_crawl {version}",
+        "Action framework reference for voidcrawl {version}",
     ),
     "Builtin Actions": (
         "builtin-actions.md",
         "Built-in Actions",
-        "Built-in action reference for void_crawl {version}",
+        "Built-in action reference for voidcrawl {version}",
     ),
     "Debug": (
         "debug.md",
         "Debug",
-        "Debug and replay reference for void_crawl {version}",
+        "Debug and replay reference for voidcrawl {version}",
     ),
 }
 
@@ -355,9 +355,9 @@ def _extract_all_names(pkg: griffe.Module) -> list[str]:
 
 def _build_sections(exclude: set[str], repo_url: str, ref: str) -> dict[str, list[str]]:
     """Load the package and populate per-section content lists."""
-    pkg = griffe.load("void_crawl")
+    pkg = cast("griffe.Module", griffe.load("voidcrawl"))
 
-    # Merge __all__ from void_crawl, void_crawl.actions, void_crawl.debug
+    # Merge __all__ from voidcrawl, voidcrawl.actions, voidcrawl.debug
     top_names = _extract_all_names(pkg)
 
     actions_mod = pkg.members.get("actions")
@@ -391,8 +391,8 @@ def _build_sections(exclude: set[str], repo_url: str, ref: str) -> dict[str, lis
                 break
         if obj is None:
             continue
-        target = obj.final_target if obj.is_alias else obj
-        _classify(name, target, exclude, sections, repo_url, ref)
+        target = obj.final_target if isinstance(obj, griffe.Alias) else obj
+        _classify(name, cast("Object", target), exclude, sections, repo_url, ref)
 
     return sections
 
@@ -420,7 +420,7 @@ def generate_split(
             f"description: {description}",
             "---",
             "",
-            f"> Generated from void_crawl `{version}`."
+            f"> Generated from voidcrawl `{version}`."
             " Only symbols in `__all__` are listed.",
             "",
         ]
@@ -437,13 +437,13 @@ def generate(version: str, exclude: set[str], repo_url: str, ref: str) -> str:
     parts: list[str] = [
         "---",
         "title: API Reference",
-        f"description: Full API reference for void_crawl {version}",
+        f"description: Full API reference for voidcrawl {version}",
         f"version: {version}",
         "---",
         "",
         "# API Reference",
         "",
-        f"> Generated from void_crawl `{version}`."
+        f"> Generated from voidcrawl `{version}`."
         " Only symbols in `__all__` are listed.",
         "",
     ]
@@ -466,7 +466,7 @@ def generate(version: str, exclude: set[str], repo_url: str, ref: str) -> str:
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Generate void_crawl API reference markdown."
+        description="Generate voidcrawl API reference markdown."
     )
     output_group = parser.add_mutually_exclusive_group()
     output_group.add_argument("--output", default="", help="Single output file path")

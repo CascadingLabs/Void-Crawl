@@ -1,6 +1,6 @@
 """Compose multiple actions into sequential flows.
 
-A :class:`Flow` groups ordered :class:`~void_crawl.actions.ActionNode`
+A :class:`Flow` groups ordered :class:`~voidcrawl.actions.ActionNode`
 instances and runs them one-by-one against a single tab, collecting
 every result into a :class:`FlowResult`.
 """
@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from void_crawl.actions._base import ActionNode
-    from void_crawl.actions._protocol import Tab
+    from collections.abc import Iterator
+
+    from voidcrawl.actions._base import ActionNode
+    from voidcrawl.actions._protocol import Tab
 
 
 @dataclass
@@ -82,8 +84,16 @@ class Flow:
     def __len__(self) -> int:
         return len(self._actions)
 
+    def __iter__(self) -> Iterator[ActionNode]:
+        return iter(self._actions)
+
     async def run(self, tab: Tab) -> FlowResult:
         """Execute all actions sequentially against *tab*.
+
+        When *tab* is a :class:`~voidcrawl.debug.DebugPage` (i.e. the
+        session was started with ``BrowserConfig(debug=True)``), execution
+        is automatically routed through an interactive
+        :class:`~voidcrawl.debug.DebugSession` instead of running silently.
 
         Args:
             tab: Any object satisfying the ``Tab`` protocol.
@@ -91,6 +101,9 @@ class Flow:
         Returns:
             One result per action.
         """
+        _debug_hook = getattr(tab, "_run_debug_flow", None)
+        if _debug_hook is not None:
+            return await _debug_hook(self)  # type: ignore[no-any-return]
         results: list[object] = []
         for action in self._actions:
             result = await action.run(tab)

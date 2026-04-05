@@ -1,26 +1,31 @@
-"""Built-in browser actions shipped with void_crawl.
+"""Built-in browser actions shipped with voidcrawl.
 
 Re-exports every action from the ``click``, ``dom``, ``hover``,
-``input``, ``scroll``, and ``wait`` modules for convenient import::
+``input``, ``network``, ``scroll``, and ``wait`` modules for convenient
+import::
 
-    from void_crawl.actions import ClickAt, WaitForSelector
+    from voidcrawl.actions import ClickAt, WaitForSelector
 """
 
-from void_crawl.actions.builtin.click import (
+from voidcrawl.actions.builtin.click import (
     CdpClick,
     CdpClickAndHold,
     ClickAt,
     ClickElement,
 )
-from void_crawl.actions.builtin.dom import GetAttribute, GetText, SetAttribute
-from void_crawl.actions.builtin.hover import CdpHover, Hover
-from void_crawl.actions.builtin.input import (
+from voidcrawl.actions.builtin.dom import GetAttribute, GetText, QueryAll, SetAttribute
+from voidcrawl.actions.builtin.hover import CdpHover, Hover
+from voidcrawl.actions.builtin.input import (
     CdpTypeText,
     ClearInput,
     SelectOption,
     SetInputValue,
 )
-from void_crawl.actions.builtin.scroll import (
+from voidcrawl.actions.builtin.network import (
+    CollectNetworkRequests,
+    InstallNetworkObserver,
+)
+from voidcrawl.actions.builtin.scroll import (
     CdpScroll,
     CdpScrollDown,
     CdpScrollLeft,
@@ -29,7 +34,7 @@ from void_crawl.actions.builtin.scroll import (
     ScrollBy,
     ScrollTo,
 )
-from void_crawl.actions.builtin.wait import WaitForSelector, WaitForTimeout
+from voidcrawl.actions.builtin.wait import WaitForSelector, WaitForTimeout
 
 __all__ = [
     "CdpClick",
@@ -42,22 +47,19 @@ __all__ = [
     "CdpScrollUp",
     "CdpTypeText",
     "ClearInput",
-    # click
     "ClickAt",
     "ClickElement",
-    # dom
+    "CollectNetworkRequests",
     "GetAttribute",
     "GetText",
-    # hover
     "Hover",
+    "InstallNetworkObserver",
+    "QueryAll",
     "ScrollBy",
-    # scroll
     "ScrollTo",
     "SelectOption",
     "SetAttribute",
-    # input
     "SetInputValue",
-    # wait
     "WaitForSelector",
     "WaitForTimeout",
 ]

@@ -5,8 +5,7 @@
     "enabled": true,
     "labels": ["security"],
     "schedule": ["at any time"],
-    "automerge": false,
-    "prPriority": 10
+    "automerge": false
   },
   "osvVulnerabilityAlerts": true,
   "timezone": "America/New_York",
@@ -14,6 +13,11 @@
   "labels": ["dependencies"],
   "dependencyDashboard": true,
   "packageRules": [
+    {
+      "description": "Prioritize vulnerability alert PRs",
+      "matchCategories": ["security"],
+      "prPriority": 10
+    },
     {
       "description": "Group GitHub Actions updates",
       "matchManagers": ["github-actions"],

@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from void_crawl.actions._base import ActionNode, JsActionNode, inline_js
+from voidcrawl.actions._base import ActionNode, JsActionNode, inline_js
 
 if TYPE_CHECKING:
-    from void_crawl.actions._protocol import Tab
+    from voidcrawl.actions._protocol import Tab
 
 
 class ScrollTo(JsActionNode):
@@ -101,6 +101,9 @@ class CdpScrollDown(CdpScroll):
     def __init__(self, pixels: float = 100, x: float = 0, y: float = 0) -> None:
         super().__init__(x=x, y=y, delta_y=pixels)
 
+    def __repr__(self) -> str:
+        return f"CdpScrollDown(pixels={self.delta_y}, x={self.x}, y={self.y})"
+
 
 class CdpScrollUp(CdpScroll):
     """Scroll **up** by *pixels* at ``(x, y)`` via CDP.
@@ -113,6 +116,9 @@ class CdpScrollUp(CdpScroll):
 
     def __init__(self, pixels: float = 100, x: float = 0, y: float = 0) -> None:
         super().__init__(x=x, y=y, delta_y=-pixels)
+
+    def __repr__(self) -> str:
+        return f"CdpScrollUp(pixels={-self.delta_y}, x={self.x}, y={self.y})"
 
 
 class CdpScrollRight(CdpScroll):
@@ -127,6 +133,9 @@ class CdpScrollRight(CdpScroll):
     def __init__(self, pixels: float = 100, x: float = 0, y: float = 0) -> None:
         super().__init__(x=x, y=y, delta_x=pixels)
 
+    def __repr__(self) -> str:
+        return f"CdpScrollRight(pixels={self.delta_x}, x={self.x}, y={self.y})"
+
 
 class CdpScrollLeft(CdpScroll):
     """Scroll **left** by *pixels* at ``(x, y)`` via CDP.
@@ -139,3 +148,6 @@ class CdpScrollLeft(CdpScroll):
 
     def __init__(self, pixels: float = 100, x: float = 0, y: float = 0) -> None:
         super().__init__(x=x, y=y, delta_x=-pixels)
+
+    def __repr__(self) -> str:
+        return f"CdpScrollLeft(pixels={-self.delta_x}, x={self.x}, y={self.y})"

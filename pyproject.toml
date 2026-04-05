@@ -4,7 +4,7 @@ requires = [ "maturin>=1.7,<2" ]
 
 [project]
 name = "voidcrawl"
-version = "0.1.9"
+version = "0.2.0"
 description = "Rust-native CDP browser automation for Python via PyO3"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -19,27 +19,40 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
- "click>=8.3.2",
- "pydantic>=2",
- "rich>=14.3.3",
+  "click>=8.3.2",
+  "pydantic>=2",
+]
+
+[project.scripts]
+vc = "voidcrawl.cli:main"
+voidcrawl = "voidcrawl.cli:main"
+
+[project.optional-dependencies]
+debug = [
+  "rich>=14.3.3",
 ]
 
 [dependency-groups]
 dev = [
+  "click>=8.3.2",
   "commitizen>=4.13",
+  "httpx>=0.28.1",
+  "maturin>=1.7,<2",
   "mypy>=1.15",
   "pytest>=9",
   "pytest-asyncio>=1",
   "griffe>=2",
   "poethepoet>=0.42",
+  "rich>=14.3.3",
   "ruff>=0.9",
+  "testcontainers>=4.14.2",
 ]
 
 [tool.maturin]
 features = [ "pyo3/extension-module" ]
 manifest-path = "crates/pyo3_bindings/Cargo.toml"
-module-name = "void_crawl._ext"
-python-packages = [ "void_crawl" ]
+module-name = "voidcrawl._ext"
+python-packages = [ "voidcrawl" ]
 include = [{ path = "LICENSE.md", format = "sdist" }]
 
 # ── Commitizen ────────────────────────────────────────────────────────────
@@ -125,7 +138,7 @@ sequence = [
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-src = [ "void_crawl", "tests", "examples" ]
+src = [ "voidcrawl", "tests", "examples" ]
 
 [tool.ruff.lint]
 select = [
@@ -177,7 +190,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = [ "void_crawl" ]
+known-first-party = [ "voidcrawl" ]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -186,7 +199,7 @@ docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.10"
-files = [ "void_crawl", "tests" ]
+files = [ "voidcrawl", "tests" ]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -200,7 +213,7 @@ show_error_codes = true
 enable_error_code = [ "ignore-without-code", "redundant-expr", "truthy-bool" ]
 
 [[tool.mypy.overrides]]
-module = "void_crawl._ext"
+module = "voidcrawl._ext"
 # Native extension — type stubs in _ext.pyi cover this
 follow_imports = "skip"
 

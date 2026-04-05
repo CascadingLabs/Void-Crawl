@@ -45,7 +45,7 @@ x-common: &common
 
 services:
   # ── AMD (iGPU + discrete) ────────────────────────────────────────────
-  void-crawl-amd:
+  voidcrawl-cdp-amd:
     <<: *common
     profiles: ["amd"]
     devices:
@@ -54,7 +54,7 @@ services:
   # ── NVIDIA ───────────────────────────────────────────────────────────
   # Requires: nvidia-container-toolkit installed on host
   # Requires: nvidia-drm.modeset=1 kernel param on host
-  void-crawl-nvidia:
+  voidcrawl-cdp-nvidia:
     <<: *common
     profiles: ["nvidia"]
     devices:
@@ -68,14 +68,14 @@ services:
               capabilities: [gpu]
 
   # ── Intel (iGPU) ────────────────────────────────────────────────────
-  void-crawl-intel:
+  voidcrawl-cdp-intel:
     <<: *common
     profiles: ["intel"]
     devices:
       - /dev/dri:/dev/dri
 
   # ── CPU-only (no GPU, software rendering) ───────────────────────────
-  void-crawl-cpu:
+  voidcrawl-cdp-cpu:
     <<: *common
     profiles: ["cpu"]
     environment:
