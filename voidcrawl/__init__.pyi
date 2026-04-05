@@ -17,6 +17,12 @@ from voidcrawl.actions._protocol import (
 from voidcrawl.actions._protocol import (
     Tab as Tab,
 )
+from voidcrawl.scale import (
+    ScaleProfile as ScaleProfile,
+)
+from voidcrawl.scale import (
+    ScaleReport as ScaleReport,
+)
 from voidcrawl.schema import (
     Attr as Attr,
 )
@@ -45,6 +51,8 @@ __all__ = [
     "PageResponse",
     "PoolConfig",
     "PooledTab",
+    "ScaleProfile",
+    "ScaleReport",
     "Schema",
     "Selector",
     "Tab",
@@ -123,6 +131,13 @@ class PoolConfig:
         chrome_ws_urls: list[str] = ...,
         browser: BrowserConfig = ...,
     ) -> None: ...
+    @classmethod
+    def from_profile(
+        cls,
+        profile: ScaleProfile = "balanced",
+        *,
+        env: str = "auto",
+    ) -> PoolConfig: ...
     @classmethod
     def from_docker(
         cls,

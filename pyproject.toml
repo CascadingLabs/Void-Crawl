@@ -19,12 +19,16 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
+  "click>=8.3.2",
   "pydantic>=2",
 ]
 
+[project.scripts]
+vc = "voidcrawl.cli:main"
+voidcrawl = "voidcrawl.cli:main"
+
 [project.optional-dependencies]
 debug = [
-  "click>=8.3.2",
   "rich>=14.3.3",
 ]
 
@@ -40,6 +44,7 @@ dev = [
   "poethepoet>=0.42",
   "rich>=14.3.3",
   "ruff>=0.9",
+  "testcontainers>=4.14.2",
 ]
 
 [tool.maturin]

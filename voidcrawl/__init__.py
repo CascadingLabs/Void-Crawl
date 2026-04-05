@@ -39,6 +39,7 @@ from voidcrawl._ext import (
     _PoolParamsContext,
 )
 from voidcrawl.actions._protocol import JsTab, Tab
+from voidcrawl.scale import ScaleProfile, ScaleReport
 from voidcrawl.schema import Attr, Schema, Text, safe_url, strip_tags
 
 Selector = Text
@@ -53,6 +54,8 @@ __all__ = [
     "PageResponse",
     "PoolConfig",
     "PooledTab",
+    "ScaleProfile",
+    "ScaleReport",
     "Schema",
     "Selector",
     "Tab",
@@ -185,6 +188,42 @@ class PoolConfig(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
 
     @classmethod
+    def from_profile(
+        cls,
+        profile: ScaleProfile = "balanced",
+        *,
+        env: str = "auto",
+    ) -> PoolConfig:
+        """Build a :class:`PoolConfig` from a resource-aware scale profile.
+
+        Measures current system resources and returns a pool configuration
+        tuned to the requested aggressiveness level.
+
+        Args:
+            profile: One of ``"minimal"``, ``"balanced"`` (default), or
+                ``"advanced"``.
+            env: Environment hint passed to
+                :func:`~voidcrawl.scale.compute_scale`. ``"auto"`` (default)
+                detects automatically from system facts.
+
+        Returns:
+            A :class:`PoolConfig` sized for the detected resources.
+
+        Raises:
+            :exc:`~voidcrawl.scale.InsufficientResourcesError`: When the
+                machine lacks the minimum resources to launch Chrome.
+
+        Example:
+            >>> cfg = PoolConfig.from_profile("balanced")
+            >>> async with BrowserPool(cfg) as pool:
+            ...     async with pool.acquire() as tab:
+            ...         await tab.goto("https://example.com")
+        """
+        from voidcrawl.scale import compute_scale  # noqa: PLC0415
+
+        return compute_scale(profile=profile, env=env).to_pool_config()  # type: ignore[arg-type]
+
+    @classmethod
     def from_docker(
         cls,
         *,
@@ -295,7 +334,15 @@ class PoolConfig(BaseModel):
             >>> async with BrowserPool(cfg) as pool:
             ...     async with pool.acquire() as tab:
             ...         await tab.navigate("https://example.com")
+
+            Using a scale profile::
+
+                SCALE_PROFILE=advanced python my_crawler.py
         """
+        scale_profile = os.environ.get("SCALE_PROFILE")
+        if scale_profile:
+            return cls.from_profile(scale_profile)  # type: ignore[arg-type]
+
         ws_urls_raw = os.environ.get("CHROME_WS_URLS", "")
         chrome_ws_urls = [u.strip() for u in ws_urls_raw.split(",") if u.strip()]
 
