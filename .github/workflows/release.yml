@@ -170,11 +170,6 @@ jobs:
             target: armv7-unknown-linux-musleabihf
             manylinux: musllinux_1_2
 
-          # Linux ARMv6 MUSL Hardfloat (cross-compile)
-          - runner: ubuntu-latest
-            target: arm-unknown-linux-musleabihf
-            manylinux: musllinux_1_2
-
           # Linux RISCV64 MUSL (cross-compile)
           - runner: ubuntu-latest
             target: riscv64gc-unknown-linux-musl
